@@ -6,6 +6,8 @@ import { getStaffShuttleDashboard } from "@/lib/shuttle/service";
 import { authorizeAssign, DriverAssignError } from "@/lib/shuttle/driverAssign";
 import { getRegularDriverDay } from "@/lib/shuttle/regularDriverRoute";
 import { readDriverBoarding } from "@/lib/shuttle/driverStatusRead";
+// 체험 셔틀 하루 탑승(2026-11-19) — 기사님 운행 화면과 같은 조립 함수(buildUnifiedRun)에 같은 입력으로 끼운다
+import { loadTrialRidesForDate } from "@/lib/shuttle/trialShuttle";
 import { buildUnifiedRun } from "@/lib/shuttle/unifiedDriverRunLogic";
 import UnifiedDriverClient from "@/components/shuttle/UnifiedDriverClient";
 import StaffShuttleDashboardClient from "./StaffShuttleDashboardClient";
@@ -52,11 +54,18 @@ export default async function StaffShuttlePage({ searchParams }: {
   const date = params.date && isKstYmd(params.date) ? params.date : today;
   const focusDirection = params.focus === "BOARD" ? "PICKUP" : params.focus === "ALIGHT" ? "DROPOFF" : null;
   // 그날 섹션 + 휴무 안내(기사님 운행 화면과 같은 함수 — 휴원·휴무 줄 잠금도 같이 붙어 온다)
-  const [{ classes, holiday }, boarding] = await Promise.all([
+  const [{ classes, holiday }, boarding, trialRides] = await Promise.all([
     getRegularDriverDay(date),
     readDriverBoarding(date, "REGULAR").catch(() => null),
+    loadTrialRidesForDate(date), // 실패하면 빈 목록(정규 운행표는 그대로)
   ]);
-  const initialBoarding = Object.fromEntries(Object.entries(boarding?.boarding ?? {}).map(([id, status]) => ["R:" + id, status]));
+  // 체험 줄이 있는 날만 체험 탑승 기록을 읽는다
+  const trialBoarding = trialRides.length > 0 ? await readDriverBoarding(date, "TRIAL").catch(() => null) : null;
+  const initialBoarding = {
+    ...Object.fromEntries(Object.entries(boarding?.boarding ?? {}).map(([id, status]) => ["R:" + id, status])),
+    ...Object.fromEntries(Object.entries(trialBoarding?.boarding ?? {}).map(([id, status]) => ["T:" + id, status])),
+  };
+  const runRows = buildUnifiedRun({ regular: classes, trial: trialRides });
 
   // 2026-11-16 원장 지시: 기사님이 아닌 사람(선생님 화면으로 보는 원장·부원장)은 탑승 여부·현재 위치만 «본다».
   // 직접 운행하는 날에는 «선생님 운행»을 눌러 운행 모드(?mode=drive)로 들어가야 탑승 체크를 할 수 있다.
@@ -119,7 +128,7 @@ export default async function StaffShuttlePage({ searchParams }: {
         key={`${date}:${driveMode ? "drive" : "view"}`}
         date={date}
         // 일반 선생님의 «보기»에는 연락처·건강 특이사항을 내려보내지 않는다(탑승 여부만). 직접 운행할 때는 연락이 필요해 그대로 준다
-        rows={teacherOnly && !driveMode ? stripRiderPrivate(buildUnifiedRun({ regular: classes })) : buildUnifiedRun({ regular: classes })}
+        rows={teacherOnly && !driveMode ? stripRiderPrivate(runRows) : runRows}
         initialBoarding={initialBoarding}
         initialBoardingReliable={boarding !== null}
         prevDate={addDaysKst(date, -1)}

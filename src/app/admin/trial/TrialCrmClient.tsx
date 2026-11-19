@@ -29,6 +29,9 @@ import {
 import { askConfirm } from "@/components/ui/feedback";
 // 유입 경로의 한글 이름은 한 곳에서 온다(2026-11-17) — 이 파일에 이름 표를 따로 두지 않는다
 import { referralSourceLabel } from "@/lib/enrollment/referralSources";
+// 체험 셔틀(2026-11-19) — 요청 구역(넣기·고치기·필요 없음)과 목록 배지. 상태 글자·색은 셔틀 배정 쪽 규칙 한 곳에서 온다
+import TrialShuttleSection from "./TrialShuttleSection";
+import { trialShuttleStatusLabel, trialShuttleStatusTone } from "@/lib/shuttle/trialShuttleRules";
 
 const TrialCrmModals = dynamic(() => import("./TrialCrmModals"), {
     loading: () => null,
@@ -74,6 +77,20 @@ export interface TrialLead {
     trialFeePaymentStatus?: string | null; // 체험비 온라인 결제 요약 — PAID·WAITING_FOR_DEPOSIT·REFUNDED·NEEDS_REFUND
     trialFeePaidAt?: string | null; // 온라인 결제 완료 시각
     staffAttendanceStatus?: string | null; // 선생님 출석부의 체험 출결 PRESENT·LATE·ABSENT(2026-11-13)
+    // 체험 셔틀 요청·배정 상태(2026-11-19) — 칸 이름은 DB(TrialLead)와 같다
+    shuttleNeeded?: boolean;
+    shuttleDirection?: string | null; // BOTH·PICKUP·DROPOFF
+    shuttlePickupName?: string | null;
+    shuttlePickupAddress?: string | null;
+    shuttlePickupLat?: number | null;
+    shuttlePickupLng?: number | null;
+    shuttleDropoffName?: string | null; // 하원 칸이 전부 비면 «등원과 같은 곳»
+    shuttleDropoffAddress?: string | null;
+    shuttleDropoffLat?: number | null;
+    shuttleDropoffLng?: number | null;
+    shuttleStatus?: string | null; // NONE·REQUESTED·ASSIGNED·UNAVAILABLE
+    shuttleRequestedAt?: string | null;
+    shuttleAdminNote?: string | null;
     hopeNote: string | null;
     agreedTerms: boolean;
     agreedPrivacy: boolean;
@@ -178,6 +195,14 @@ const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
 };
 
 // 상태 순서 (파이프라인 흐름)
+/** 상세를 연 채 새로 맞출 셔틀 칸 이름 */
+const TRIAL_SHUTTLE_LEAD_KEYS = [
+    "shuttleNeeded", "shuttleDirection",
+    "shuttlePickupName", "shuttlePickupAddress", "shuttlePickupLat", "shuttlePickupLng",
+    "shuttleDropoffName", "shuttleDropoffAddress", "shuttleDropoffLat", "shuttleDropoffLng",
+    "shuttleStatus", "shuttleRequestedAt", "shuttleAdminNote",
+] as const satisfies readonly (keyof TrialLead)[];
+
 const STATUS_ORDER = ["NEW", "CONTACTED", "SCHEDULED", "ATTENDED", "CONVERTED", "LOST", "CANCELLED"] as const;
 const CLOSED_TRIAL_STATUSES = new Set(["CONVERTED", "LOST", "CANCELLED"]);
 const TRIAL_PAGE_SIZE = 50;
@@ -708,6 +733,21 @@ export default function TrialCrmClient({
         };
     }, []);
 
+    // 상세를 연 채 셔틀 요청을 넣거나 배정하면 목록을 새로 읽는다 → 열려 있는 상세의 «셔틀 칸만» 새 값으로 맞춘다.
+    // (다른 칸은 예전처럼 연 순간의 값을 둔다 — 기존 동작을 바꾸지 않는다)
+    useEffect(() => {
+        setShowDetailModal((current) => {
+            if (!current) return current;
+            const fresh = leads.find((item) => item.id === current.id);
+            if (!fresh) return current;
+            const changed = TRIAL_SHUTTLE_LEAD_KEYS.some((key) => fresh[key] !== current[key]);
+            if (!changed) return current;
+            const next = { ...current };
+            for (const key of TRIAL_SHUTTLE_LEAD_KEYS) (next as Record<string, unknown>)[key] = fresh[key];
+            return next;
+        });
+    }, [leads]);
+
     const showFeedback = useCallback((type: "success" | "error" | "info", message: string) => {
         if (feedbackTimerRef.current) window.clearTimeout(feedbackTimerRef.current);
         setFeedback({ type, message });
@@ -1060,6 +1100,9 @@ export default function TrialCrmClient({
         const gradeLabel = lead.childGrade || lead.childAge || "-";
         const feeChip = trialFeeListChip(lead);
         const staffMark = trialStaffMarkBadge(lead.staffAttendanceStatus);
+        // 셔틀 요청이 없는 건(NONE·칸 없음)과 끝난 신청(취소·이탈·등록 전환)에는 배지를 붙이지 않는다
+        // — 끝난 신청에 «셔틀 배정 대기»가 남아 있으면 할 일이 있는 것처럼 보인다
+        const shuttleBadgeShown = Boolean(lead.shuttleStatus) && lead.shuttleStatus !== "NONE" && !isClosedTrialStatus(lead.status);
         return (
             <tr
                 key={`${lead.id}-list`}
@@ -1119,6 +1162,12 @@ export default function TrialCrmClient({
                         {staffMark && (
                             <span className={`ml-1 rounded px-1 py-0.5 text-xs font-medium ${statusBadgeClass(staffMark.tone)}`} title="선생님이 출석부에서 찍은 체험 출결">
                                 선생님 {staffMark.label}
+                            </span>
+                        )}
+                        {/* 체험 셔틀 상태 — 요청이 있는 건만 글자 배지(대기 = 주의 · 배정 = 완료 · 어려움 = 보류) */}
+                        {shuttleBadgeShown && (
+                            <span className={`ml-1 whitespace-nowrap rounded px-1 py-0.5 text-xs font-medium ${statusBadgeClass(trialShuttleStatusTone(lead.shuttleStatus))}`}>
+                                {trialShuttleStatusLabel(lead.shuttleStatus)}
                             </span>
                         )}
                     </span>
@@ -1351,6 +1400,9 @@ export default function TrialCrmClient({
                     onCoachNotice={() => void handleSendCoachNotice(showDetailModal)}
                     onResendSms={() => void handleResendApplicationSms(showDetailModal)}
                     onConfirmTrialFee={() => void handleConfirmTrialFee(showDetailModal)}
+                    // 셔틀 요청·배정이 바뀌면 목록을 새로 읽는다(위 효과가 열려 있는 상세의 셔틀 칸을 맞춘다)
+                    onShuttleChanged={() => loadTrialData()}
+                    onShuttleFeedback={showFeedback}
                     busy={busy}
                     trialFeeBusy={Boolean(trialFeeBusyId)}
                 />
@@ -1495,6 +1547,8 @@ function TrialLeadDetailModal({
     onCoachNotice,
     onResendSms,
     onConfirmTrialFee,
+    onShuttleChanged,
+    onShuttleFeedback,
     busy,
     trialFeeBusy,
 }: {
@@ -1512,6 +1566,8 @@ function TrialLeadDetailModal({
     onCoachNotice: () => void;
     onResendSms: () => void;
     onConfirmTrialFee: () => void;
+    onShuttleChanged: () => Promise<boolean> | boolean;
+    onShuttleFeedback: (type: "success" | "error" | "info", message: string) => void;
     busy: boolean;
     trialFeeBusy: boolean;
 }) {
@@ -1575,6 +1631,9 @@ function TrialLeadDetailModal({
                         </div>
                     ))}
                 </dl>
+
+                {/* 셔틀 — 요청 내용 보기·넣기·고치기·«필요 없음», 그리고 배정(요청이 있을 때만) */}
+                <TrialShuttleSection lead={lead} onChanged={onShuttleChanged} onFeedback={onShuttleFeedback} />
 
                 {(lead.hopeNote || lead.memo || lead.openFollowUpNote) && (
                     <div className="mt-5 space-y-2">

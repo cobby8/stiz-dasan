@@ -17,6 +17,7 @@ export type AdminDigestInput = {
   needsCheckCount: number; // 수강 변경: 사이트엔 반영됐지만 확인이 남은 건(2026-11-14 랠리즈 은퇴 뒤에는 옛 대기·보류 건만)
   pendingChangeCount: number; // 수강 변경: 승인 대기
   kakaoPendingCount?: number; // 카카오 접수: 원장 확인 대기(접수·보류·실패)
+  trialShuttleWaitingCount?: number; // 체험 셔틀: 오늘·내일 체험인데 아직 셔틀 배정이 없는 건(2026-11-19)
   /** 미납 금액(합계·월별 합계)을 문구에 넣을까 — 원장 true(기본), 부원장 false(건수만, 2026-11-14 부원장 금액 가림) */
   showMoney?: boolean;
 };
@@ -99,17 +100,26 @@ export function buildAdminDailyDigest(input: AdminDigestInput): AdminDigest | nu
     lines.push(`[카카오 접수 대기] ${kakaoPendingCount}건`);
   }
 
+  // 체험 셔틀 배정 대기(오늘·내일 체험) — 0건이면 줄을 만들지 않는다
+  const trialShuttleWaitingCount = Number(input.trialShuttleWaitingCount ?? 0);
+  if (trialShuttleWaitingCount > 0) {
+    titleParts.push(`체험 셔틀 배정 대기 ${trialShuttleWaitingCount}건`);
+    lines.push(`[체험 셔틀 배정 대기] ${trialShuttleWaitingCount}건 — 오늘·내일 체험인데 셔틀 배정이 없습니다`);
+  }
+
   // 확인할 일이 없으면 알림 자체를 만들지 않는다
   if (titleParts.length === 0) return null;
 
-  // 링크는 하나만 달 수 있으므로 가장 급한 화면으로: 미납 → 확인 필요 → 승인 대기 → 카카오 접수
+  // 링크는 하나만 달 수 있으므로 가장 급한 화면으로: 미납 → 확인 필요 → 승인 대기 → 카카오 접수 → 체험 셔틀
   const linkUrl = totalCount > 0
     ? "/admin/finance"
     : input.needsCheckCount > 0
       ? "/admin/enrollment-changes?status=NEEDS_CHECK"
       : input.pendingChangeCount > 0
         ? "/admin/enrollment-changes"
-        : "/admin/kakao-requests";
+        : kakaoPendingCount > 0
+          ? "/admin/kakao-requests"
+          : "/admin/trial";
 
   return {
     title: `오늘 확인할 일: ${titleParts.join(" · ")}`,

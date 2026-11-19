@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { requireAdmin } from "@/lib/auth-guard";
 import RegularRunEditor from "./RegularRunEditor";
 import ShuttleSectionTabs from "../ShuttleSectionTabs";
@@ -15,6 +16,9 @@ import { todayKst } from "@/lib/datetime/kst";
 // — 2026-11-17 부터 운행표 머리줄의 «당일 변경» 버튼 + 창(RegularRunEditor 의 headerExtra 로 넘긴다)
 import ShuttleDayExceptionAdminPanel from "./ShuttleDayExceptionAdminPanel";
 import { getShuttleExceptionBoardForAdmin } from "@/lib/shuttle/admin-shuttle-exception";
+// 체험 셔틀(2026-11-19) — 배정을 기다리는 체험 신청 건수. 정규 명단과는 다른 표라 운행표 자체에는 섞지 않는다
+import { countTrialShuttleWaiting } from "@/lib/shuttle/trialShuttle";
+import { trialShuttleWaitingLabel } from "@/lib/shuttle/trialShuttleRules";
 
 export const dynamic = "force-dynamic";
 
@@ -71,6 +75,8 @@ export default async function RegularDispatchPage({ searchParams }: { searchPara
 
   // 셔틀 당일 변경 목록(위에서 미리 시작한 조회)
   const dayExceptions = await dayExceptionsPromise;
+  // 체험 셔틀 배정 대기 — 실패·칸 없음이면 0(아무것도 그리지 않는다). 동시 조회를 늘리지 않게 맨 끝에서 읽는다
+  const trialWaiting = trialShuttleWaitingLabel(await countTrialShuttleWaiting());
 
   return (
     <>
@@ -89,7 +95,13 @@ export default async function RegularDispatchPage({ searchParams }: { searchPara
         riderBlocks={marks.labelByRowId}
         monthHolidays={marks.holidays}
         // 운행표 위에 칸을 따로 두지 않는다(2026-11-17 원장 지시) — 머리줄 «실시간 위치» 뒤의 «당일 변경» 버튼 하나 + 창
-        headerExtra={<ShuttleDayExceptionAdminPanel initial={JSON.parse(JSON.stringify(dayExceptions))} />}
+        headerExtra={
+          <>
+            <ShuttleDayExceptionAdminPanel initial={JSON.parse(JSON.stringify(dayExceptions))} />
+            {/* 배정은 체험 신청 상세에서 한다 — 여기서는 «할 일이 있다»만 알리고 그 화면으로 보낸다(0건이면 안 보인다) */}
+            {trialWaiting && <Link href="/admin/trial" className="academy-button-tonal">{trialWaiting}</Link>}
+          </>
+        }
       />
       <RegularStopGeocodePanel
         stopNames={missingStops}

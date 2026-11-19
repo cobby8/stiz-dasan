@@ -99,7 +99,8 @@ test("카카오 접수 대기는 건수가 있을 때만 넣고, 다른 할 일�
 test("카카오 접수 대기는 원장 확인이 필요한 상태만 센다", () => {
   assert.match(service, /FROM "KakaoParentIntake" WHERE status IN \('SUBMITTED', 'HELD', 'FAILED'\)/);
   // 2026-11-14: 요약 입력을 digestInput 하나로 묶어 원장용·부원장용 두 벌에 같이 넘긴다
-  assert.match(service, /kakaoPendingCount \};/);
+  // 2026-11-19: 체험 셔틀 배정 대기(오늘·내일 체험) 건수가 같은 묶음에 더해졌다
+  assert.match(service, /kakaoPendingCount, trialShuttleWaitingCount \};/);
 });
 
 test("받는 사람은 원장·부원장 계정뿐 — 학부모·코치 대상 조회가 없다", () => {

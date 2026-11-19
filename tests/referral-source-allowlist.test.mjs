@@ -324,6 +324,17 @@ function loadPublicActions(prisma, mutate = null) {
     "@/lib/seasonal/contracts": { SHUTTLE_LOCATION_CONSENT_VERSION: "test" },
     "@/lib/enrollment/shuttle-place-name": { shuttlePlaceNameError: () => null },
     "@/lib/seats/seatLevel": { seatLevelFromCounts: () => "OPEN" },
+    // 체험 셔틀 요청(2026-11-19): 검사 규칙은 진짜, DB 저장은 대역(이 테스트의 관심사는 유입 경로)
+    "@/lib/trial/trialShuttleRequest": load("src/lib/trial/trialShuttleRequest.ts", {
+      "@/lib/shuttle/academyLocation": load("src/lib/shuttle/academyLocation.ts"),
+      "@/lib/shuttle/placeNameRule": load("src/lib/shuttle/placeNameRule.ts"),
+      "@/lib/enrollment/shuttle-place-name": load("src/lib/enrollment/shuttle-place-name.ts"),
+    }),
+    "@/lib/trial/trialShuttleRequestStore": {
+      appendTrialLeadMemo: async () => {}, readTrialShuttleState: async () => null, writeTrialShuttleRequest: async () => 1,
+      countRecentTrialResubmits: async () => 0, recordTrialResubmitLog: async () => {},
+      releaseTrialShuttleWithResult: async () => ({ ok: true, released: 0 }),
+    },
     "next/cache": { revalidatePath() {}, revalidateTag() {} },
   }, mutate);
   return { actions, sent };

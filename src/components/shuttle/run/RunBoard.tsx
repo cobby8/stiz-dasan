@@ -475,7 +475,7 @@ export default function RunBoard({
             </div>
           )}
           <div className={styles.stopMeta}>
-            <span className="font-semibold text-[var(--color-academy-ink)]">{row.kind === "SEASONAL" ? "특강" : "정규"} · {isPickup ? "등원" : "하원"}</span>
+            <span className="font-semibold text-[var(--color-academy-ink)]">{row.kind === "SEASONAL" ? "특강" : row.kind === "TRIAL" ? "체험" : "정규"} · {isPickup ? "등원" : "하원"}</span>
             {row.groupLabel && <span>{row.groupLabel}</span>}
             {row.subLabel && row.subLabel !== row.groupLabel && <span>{row.subLabel}</span>}
             {renderStopMeta?.(row)}

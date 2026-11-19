@@ -130,7 +130,7 @@ export default function TrialCrmModals({
                             }),
                             onCloseSchedule,
                             "체험 일정을 저장했습니다.",
-                            undefined,
+                            (result) => shuttleReleaseWarning(result, "체험 일정을 저장했습니다."),
                             true,
                         )
                     }
@@ -154,6 +154,7 @@ export default function TrialCrmModals({
                                 }),
                             onCloseCancel,
                             "체험 신청을 취소 처리했습니다.",
+                            (result) => shuttleReleaseWarning(result, "체험 신청을 취소 처리했습니다."),
                         )
                     }
                     busy={busy}
@@ -187,7 +188,8 @@ export default function TrialCrmModals({
                                     lostReason: reason,
                                 }),
                             onCloseLost,
-                            "이탈 처리했습니다."
+                            "이탈 처리했습니다.",
+                            (result) => shuttleReleaseWarning(result, "이탈 처리했습니다."),
                         )
                     }
                     busy={busy}
@@ -204,6 +206,15 @@ export default function TrialCrmModals({
             )}
         </>
     );
+}
+
+/**
+ * 저장은 됐지만 체험 셔틀 배정을 풀지 못했을 때의 안내(일정 변경·취소·이탈 공용).
+ * 그대로 두면 기사님 운행표에 예전 날짜·취소된 아이가 남으므로 성공 문구 대신 이 안내를 보인다.
+ */
+function shuttleReleaseWarning(result: unknown, doneText: string): { type: "success" | "error"; message: string } | null {
+    const failed = Boolean(result && typeof result === "object" && (result as { shuttleReleaseFailed?: boolean }).shuttleReleaseFailed);
+    return failed ? { type: "error", message: `${doneText} 다만 셔틀 배정을 풀지 못했습니다. 셔틀 배정을 확인해 주세요.` } : null;
 }
 
 function dateInputValue(dateStr: string | null) {

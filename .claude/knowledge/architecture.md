@@ -387,3 +387,9 @@ approveIllnessCarry 가 서버에서 갈래를 정한다(이월 근거 있음 �
 - **발견자**: developer
 - **내용**: `src/lib/navigation/inAppHistory.ts` 가 범위(`/mypage`·`/staff`·`/admin`)마다 저장 키·메모리 기록·첫 기록·떠남·바꿔 끼우기·pop 표시를 따로 둔다. 학부모 함수(recordInAppNavigation 등)는 /mypage 로 부르는 포장이고 규칙은 nextParentRecord 그대로. 선생님·관리자는 nextStaffOrAdminRecord: 문서를 범위 밖에서 불러왔으면 새로 시작 · 문서 첫 기록에서도 떠남 표시 확인 · 새로고침은 navigation type 으로 확인 · 같은 경로가 기록에 있으면 거기까지 잘라냄(nextScopeHistory) · 거쳐 가는 화면(SCOPE_PASS_THROUGH_PATHS)은 기록 안 함. 기록 부품 = `components/navigation/ScopeHistoryTracker`(staff layout·AdminShellClient 에 Suspense 로 한 번), 화면 안 뒤로 = `ScopeBackLink`(기록 있으면 history.back, 없으면 fallbackHref 로 replace). 머리줄 AppBackButton 은 scopeHref 가 /staff·/admin 이면 설치 여부와 무관하게 범위를 지킨다(backAction ALWAYS_SCOPED, 역할 홈 = 범위 안 fallbackHref — 기사님 전용은 /staff/shuttle). ⚠️ 새 «← 목록» 링크는 고정 Link 가 아니라 ScopeBackLink 로. 화면을 CJS·vm 대역으로 그리는 테스트(scheduled-enrollment-ui·shuttle-intake-ui)는 이 부품의 대역을 넣어야 한다. backAction.ts 는 import 없이 유지(테스트가 data URL 로 실행). 테스트 `tests/scope-back-nav.test.mjs`.
 - **참조횟수**: 0
+
+### [2026-11-19] 체험 셔틀 = 하루 탑승 표 + 운행표 셋째 출처(TRIAL)
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 체험 학생(TrialLead)은 정규 명단(RegularShuttleStop)에 넣지 않는다(매주 반복·청구 자동 발행 멈춤). 하루 탑승 표 `TrialShuttleRide`(serviceDate 문자열 · direction BOARD/ALIGHT · classTime = 끼울 묶음 · afterStopName = «이 정류장 다음», null=맨 앞)가 출처이고, `buildUnifiedRun({ trial })` 의 `insertTrialRows` 가 정규 줄 사이에 끼운다(최종 순서는 시각 정렬, 끼운 자리는 같은 시각·시간 미정일 때의 순서). 체험 줄은 묶음 키가 `T:<rideId>` 라 정규 묶음의 순서 편집·시각 다시 계산에 섞이지 않는다. 탑승 체크 = `ShuttleBoarding(direction='TRIAL', shuttleRequestId=rideId)`, 주소는 `/api/shuttle/trial-boarding`(토큰)·`/api/staff/shuttle/trial-boarding`(로그인). 운행표 조회(`loadTrialRidesForDate`)는 취소·이탈·날짜가 바뀐 체험을 스스로 걸러 «배정 풀기» 호출이 빠져도 안전하다. 상태 전이·문구는 `lib/shuttle/trialShuttleRules.ts`(순수), 끼울 자리 추천은 정규 «학생 추가»의 suggestPlacement 재사용(`trialShuttlePlacement.ts`). `unifiedDriverRun.ts` 를 대역으로 올리는 테스트는 `./trialShuttle` 도 대역이 필요하다(server-only).
+- **참조횟수**: 0

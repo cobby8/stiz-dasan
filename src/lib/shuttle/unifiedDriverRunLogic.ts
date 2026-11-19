@@ -10,10 +10,11 @@
 // ⚠️ 탑승 체크 저장 경로는 절대 통합하지 않는다. 행마다 자기 종류(kind)를 들고 다니며
 //    특강 행은 /api/shuttle/boarding, 정규 행은 /api/shuttle/regular-boarding 으로 간다.
 //    저장 키도 종전 그대로다(특강=shuttleRequestId, 정규=시트 정차행 id).
+//    셋째 출처 «체험»(TRIAL, 2026-11-19)은 /api/shuttle/trial-boarding 으로 간다(키=하루 탑승 TrialShuttleRide.id).
 
 import type { DriverClass } from "./regularDriverRouteLogic";
 
-export type UnifiedKind = "SEASONAL" | "REGULAR";
+export type UnifiedKind = "SEASONAL" | "REGULAR" | "TRIAL";
 export type UnifiedDirection = "PICKUP" | "DROPOFF";
 
 /** 한 학생(정확히는 "한 정차에서의 한 탑승 건"). checkId 는 그 종류의 기존 저장 키 그대로. */
@@ -75,6 +76,11 @@ export type UnifiedRow = {
   pending: boolean;
   /** 정규 '노선에 없는 승객'(저장 노선에 안 실린 시트 행). */
   warn: boolean;
+  /**
+   * 체험 줄(TRIAL)이 끼어든 정규 묶음의 groupKey — «화면 묶음 머리»를 쪼개지 않으려고 runBlocks 만 본다.
+   * 줄 자신의 groupKey(T:…)는 그대로라 순서 편집·저장 대조(정규 줄만)에는 섞이지 않는다. 묶음을 못 찾았으면 없음.
+   */
+  hostGroupKey?: string | null;
   riders: UnifiedRider[];
 };
 
@@ -392,14 +398,123 @@ export function countProgress(
   return { total, boarded, noshow, self };
 }
 
-/** 통합 목록 조립 — 특강 먼저 만들고 정규를 이어 붙인 뒤 시각순으로 섞는다. */
+// ── 체험 셔틀(2026-11-19 원장 결정) — 체험 학생을 «체험 날 하루만» 정규 운행 묶음 안에 끼운다 ──
+// 정규 명단(RegularShuttleStop)에는 넣지 않는다(매주 반복 + 청구 자동 발행 멈춤). 하루 탑승 표(TrialShuttleRide)가 출처다.
+
+/** 하루 탑승 한 건(서버가 TrialShuttleRide + TrialLead 를 읽어 넘긴다). */
+export type TrialRideInput = {
+  /** TrialShuttleRide.id — 탑승 체크 저장 키 */
+  rideId: string;
+  /** 정규 명단과 같은 값: BOARD = 등원, ALIGHT = 하원 */
+  direction: "BOARD" | "ALIGHT";
+  /** 끼울 정규 운행 묶음의 수업시간 글자(그 요일 명단의 classTime) */
+  classTime: string;
+  /** 그 묶음에서 «이 정류장 다음». null = 묶음 맨 앞 */
+  afterStopName: string | null;
+  /** 같은 자리에 체험 학생이 여럿일 때의 순서 */
+  sortOrder?: number;
+  stopName: string;
+  arriveTime: string | null;
+  lat?: number | null;
+  lng?: number | null;
+  childName: string;
+  grade?: string | null;
+  parentPhone?: string | null;
+};
+
+/** 묶음·정류장 이름 비교용 — 공백을 지우고 소문자로('16:00 ~ 17:00' = '16:00~17:00'). */
+function squash(value: string | null | undefined): string {
+  return String(value ?? "").replace(/\s+/g, "").toLowerCase();
+}
+
+/** 체험 한 건 → 운행표 한 줄. 묶음 키를 따로 둬(T:…) 정규 묶음의 순서 편집·시각 다시 계산에 섞이지 않는다. */
+export function buildTrialRow(ride: TrialRideInput, groupLabel: string | null, hostGroupKey: string | null = null): UnifiedRow {
+  const direction: UnifiedDirection = ride.direction === "BOARD" ? "PICKUP" : "DROPOFF";
+  const minutes = parseHHMM(ride.arriveTime);
+  return {
+    key: `T:${ride.rideId}`,
+    kind: "TRIAL",
+    direction,
+    groupKey: `T:${ride.rideId}`,
+    groupLabel,
+    label: ride.stopName,
+    subLabel: null,
+    time: formatHHMM(minutes),
+    minutes,
+    seq: 0,
+    lat: ride.lat ?? null,
+    lng: ride.lng ?? null,
+    isHub: false,
+    isTerminal: false,
+    pending: false,
+    warn: false,
+    ...(hostGroupKey ? { hostGroupKey } : {}),
+    riders: [{
+      key: `T:${ride.rideId}`,
+      checkId: ride.rideId,
+      kind: "TRIAL",
+      direction,
+      name: ride.childName,
+      grade: ride.grade ?? null,
+      parentPhone: ride.parentPhone ?? null,
+      studentPhone: null,
+      absent: false,
+    }],
+  };
+}
+
+/**
+ * 정규 줄 목록(정렬 전)에 체험 줄을 끼운다 — 「그 묶음(수업시간 × 방향)의 afterStopName 정류장 바로 다음」.
+ *   - afterStopName 이 null 이면 그 묶음의 첫 줄 앞.
+ *   - 묶음이나 정류장을 못 찾으면(명단이 바뀜·그 요일 정규 운행 없음) 목록 끝에 붙인다 — **절대 빠뜨리지 않는다**.
+ *   - 최종 순서는 뒤이은 시각 정렬(sortUnifiedRows)이 정한다. 여기서 정한 자리는 «같은 시각»·«시간 미정»일 때의 순서다.
+ * 정규 줄은 하나도 바꾸지 않는다(끼우기만 한다).
+ */
+export function insertTrialRows(regularRows: UnifiedRow[], rides: TrialRideInput[]): UnifiedRow[] {
+  if (!rides || rides.length === 0) return regularRows;
+  const out = [...regularRows];
+  const ordered = rides
+    .map((ride, index) => ({ ride, index }))
+    .sort((a, b) => (a.ride.sortOrder ?? 0) - (b.ride.sortOrder ?? 0) || a.index - b.index);
+  for (const { ride } of ordered) {
+    const side = ride.direction === "BOARD" ? "board" : "alight";
+    const inGroup = (row: UnifiedRow) => {
+      if (row.kind !== "REGULAR") return false;
+      const m = /^R:(.*):(board|alight)$/.exec(row.groupKey);
+      return Boolean(m) && m![2] === side && squash(m![1]) === squash(ride.classTime);
+    };
+    const first = out.findIndex(inGroup);
+    const label = first >= 0 ? out[first].groupLabel : `${ride.classTime} 수업`;
+    const row = buildTrialRow(ride, label, first >= 0 ? out[first].groupKey : null);
+    let at = out.length;
+    if (first >= 0) {
+      if (ride.afterStopName == null || squash(ride.afterStopName) === "") {
+        at = first;
+      } else {
+        let anchor = -1;
+        out.forEach((r, i) => { if (inGroup(r) && squash(r.label) === squash(ride.afterStopName)) anchor = i; });
+        // 정류장을 못 찾으면 그 묶음의 마지막 줄 뒤
+        if (anchor < 0) out.forEach((r, i) => { if (inGroup(r)) anchor = i; });
+        at = anchor + 1;
+        // 같은 자리에 먼저 끼운 체험 줄이 있으면 그 뒤로(sortOrder 순서 유지)
+        while (at < out.length && out[at].kind === "TRIAL") at += 1;
+      }
+    }
+    out.splice(at, 0, row);
+  }
+  return out;
+}
+
+/** 통합 목록 조립 — 특강 먼저 만들고 정규(+ 그 사이에 끼운 체험)를 이어 붙인 뒤 시각순으로 섞는다. */
 export function buildUnifiedRun(input: {
   seasonal?: SeasonalSectionInput[];
   regular?: DriverClass[];
+  /** 그날 체험 셔틀 하루 탑승(없으면 종전 결과와 글자 그대로 같다) */
+  trial?: TrialRideInput[];
 }): UnifiedRow[] {
   return sortUnifiedRows([
     ...buildSeasonalRows(input.seasonal ?? []),
-    ...buildRegularRows(input.regular ?? []),
+    ...insertTrialRows(buildRegularRows(input.regular ?? []), input.trial ?? []),
   ]);
 }
 

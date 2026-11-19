@@ -24,6 +24,24 @@ import { shuttlePlaceNameError } from "@/lib/enrollment/shuttle-place-name";
 import { seatLevelFromCounts, type SeatLevel } from "@/lib/seats/seatLevel";
 // 유입 경로 허용 값 한 곳 — 목록 밖 값은 거절하지 않고 «기타»로 저장한다(통계 오염 방지)
 import { normalizeReferralSource } from "@/lib/enrollment/referralSources";
+// 체험 셔틀 요청(2026-11-19) — 검사 규칙은 신청서·관리자와 같은 한 곳, 저장 SQL 도 관리자와 같은 한 곳
+import {
+    TRIAL_RESUBMIT_LIMIT,
+    decideTrialShuttleResubmit,
+    normalizeTrialShuttleRequest,
+    trialResubmitClearsSchedule,
+    trialShuttleChangeMemoText,
+    trialShuttleMemoText,
+    type TrialShuttleRequestColumns,
+} from "@/lib/trial/trialShuttleRequest";
+import {
+    appendTrialLeadMemo,
+    countRecentTrialResubmits,
+    readTrialShuttleState,
+    recordTrialResubmitLog,
+    releaseTrialShuttleWithResult,
+    writeTrialShuttleRequest,
+} from "@/lib/trial/trialShuttleRequestStore";
 
 async function issueEnrollmentAccountHandoffSafely(enrollmentApplicationId: string) {
     try {
@@ -145,6 +163,65 @@ interface TrialApplicationInput {
     agreedTerms?: boolean;
     agreedPrivacy?: boolean;
     honeypot?: string;            // 스팸 방지용 숨김 필드
+    /** 체험 셔틀 요청(2026-11-19). 없거나 needed 가 true 가 아니면 «필요 없음». 모양·값은 서버에서 다시 검사한다 */
+    shuttle?: unknown;
+}
+
+/**
+ * 체험 셔틀 요청 저장 — 신청 본문 저장이 «끝난 뒤» 따로 한다.
+ *
+ * 왜 따로인가(가장 중요): 배포 순서가 어긋나 운영 DB 에 셔틀 칸이 아직 없을 수 있다.
+ * 본문 INSERT/UPDATE 에 셔틀 칸을 섞으면 «칸 없음» 오류로 신청 자체를 잃는다.
+ * 그래서 셔틀 저장이 실패해도 신청은 그대로 두고, 요청 내용을 관리 메모(memo)에 글로 남긴다.
+ */
+async function leaveTrialShuttleMemoFallback(leadId: string, columns: TrialShuttleRequestColumns, cause: unknown): Promise<void> {
+    console.error("[submitTrialApplication] 셔틀 요청 저장 실패 — 관리 메모에 남깁니다:", (cause as Error)?.message);
+    try {
+        await appendTrialLeadMemo(prisma, leadId, trialShuttleMemoText(columns));
+    } catch (memoError) {
+        console.error("[submitTrialApplication] 셔틀 요청 메모 저장도 실패:", (memoError as Error).message);
+    }
+}
+
+/** 새 신청(방금 만든 줄)의 셔틀 요청 저장 */
+async function saveTrialShuttleForNewApplication(leadId: string, columns: TrialShuttleRequestColumns): Promise<void> {
+    if (!columns.shuttleNeeded) return;
+    try {
+        await writeTrialShuttleRequest(prisma, leadId, columns);
+    } catch (shuttleError) {
+        await leaveTrialShuttleMemoFallback(leadId, columns, shuttleError);
+    }
+}
+
+/**
+ * 다시 낸 신청서의 셔틀 요청 — 로그인이 없는 길이라(아이 이름+보호자 전화만 같으면 같은 신청) 조심해서 다룬다.
+ *  - KEEP           : «필요 없음»으로 다시 냈거나 전과 같은 내용 → 아무것도 하지 않는다
+ *  - OVERWRITE      : 아직 배정 전(요청 없음·배정 대기) → 새 내용으로 바꾼다(쓰는 순간에도 그 상태일 때만)
+ *  - HOLD_FOR_ADMIN : 이미 배정됐거나 «어려움»으로 정리된 건 → 요청 칸·상태·배정을 건드리지 않고
+ *                     새 내용을 관리 메모에 남긴다. 관리자가 확인하고 직접 바꾼다.
+ *  - MEMO_FALLBACK  : 셔틀 칸을 읽거나 쓰지 못함(칸 없음 등) → 관리 메모로 대신
+ * 이 함수는 절대 던지지 않는다(신청 본문은 이미 저장됐다).
+ */
+async function applyTrialShuttleOnResubmit(
+    leadId: string,
+    columns: TrialShuttleRequestColumns,
+): Promise<"KEEP" | "OVERWRITE" | "HOLD_FOR_ADMIN" | "MEMO_FALLBACK"> {
+    if (!columns.shuttleNeeded) return "KEEP";
+    try {
+        const state = await readTrialShuttleState(prisma, leadId);
+        const decision = decideTrialShuttleResubmit({ previous: state?.columns ?? null, previousStatus: state?.status, next: columns });
+        if (decision === "KEEP") return "KEEP";
+        if (decision === "OVERWRITE") {
+            // 읽은 뒤 쓰기 전에 관리자가 배정했을 수 있다 → «아직 배정 전»일 때만 쓰이게 조건을 건다(0줄이면 배정된 것)
+            const written = await writeTrialShuttleRequest(prisma, leadId, columns, "OPEN_ONLY");
+            if (written > 0) return "OVERWRITE";
+        }
+        await appendTrialLeadMemo(prisma, leadId, trialShuttleChangeMemoText(columns, todayKst()));
+        return "HOLD_FOR_ADMIN";
+    } catch (shuttleError) {
+        await leaveTrialShuttleMemoFallback(leadId, columns, shuttleError);
+        return "MEMO_FALLBACK";
+    }
 }
 
 // 전화번호 정규화
@@ -192,6 +269,17 @@ function csvToList(value: unknown): string[] {
 
 function rowValue<T = string>(row: any, camelKey: string, lowerKey: string): T | null {
     return (row?.[camelKey] ?? row?.[lowerKey] ?? null) as T | null;
+}
+
+/** 기존 진행 중 신청 한 줄(다시 낸 신청서 판단용) */
+type ExistingTrialLeadRow = { id: string; status?: string | null; scheduledDate?: unknown };
+
+/** 너무 잦은 제출 — 화면에 이 문구가 그대로 보여야 해서 일반 오류와 구분한다 */
+class TrialSubmitLimitError extends Error {
+    constructor() {
+        super("신청이 너무 많이 접수되었습니다. 잠시 후 다시 시도해주세요.");
+        this.name = "TrialSubmitLimitError";
+    }
 }
 
 function activeTrialDuplicateWhereClause() {
@@ -296,6 +384,11 @@ export async function submitTrialApplication(data: TrialApplicationInput) {
         throw new Error("올바른 전화번호를 입력해주세요.");
     }
 
+    // 셔틀 요청 검사(방향 허용값·좌표 범위·위치명 필수·길이) — 화면과 같은 규칙. «필요 없음»이면 빈 칸 묶음이 나온다.
+    const shuttleRequest = normalizeTrialShuttleRequest(data.shuttle);
+    if (!shuttleRequest.ok) throw new Error(shuttleRequest.message);
+    const shuttleColumns = shuttleRequest.columns;
+
     // 필요한 테이블과 컬럼이 없으면 자동으로 준비합니다.
     await ensureTrialLeadTable();
 
@@ -305,8 +398,8 @@ export async function submitTrialApplication(data: TrialApplicationInput) {
         const normalizedPhoneDigits = normalizedParentPhone.replace(/\D/g, "");
 
         const existingRows = data.existingId
-            ? await prisma.$queryRawUnsafe<{ id: string }[]>(
-                `SELECT id
+            ? await prisma.$queryRawUnsafe<ExistingTrialLeadRow[]>(
+                `SELECT id, status, "scheduledDate"
                    FROM "TrialLead"
                   WHERE id = $1
                     AND LOWER(TRIM("childName")) = LOWER($2)
@@ -317,8 +410,8 @@ export async function submitTrialApplication(data: TrialApplicationInput) {
                 childName,
                 normalizedPhoneDigits,
             )
-            : await prisma.$queryRawUnsafe<{ id: string }[]>(
-                `SELECT id
+            : await prisma.$queryRawUnsafe<ExistingTrialLeadRow[]>(
+                `SELECT id, status, "scheduledDate"
                    FROM "TrialLead"
                   WHERE LOWER(TRIM("childName")) = LOWER($1)
                     AND regexp_replace(COALESCE("parentPhone", ''), '[^0-9]', '', 'g') = $2
@@ -331,6 +424,22 @@ export async function submitTrialApplication(data: TrialApplicationInput) {
 
         const existingId = existingRows[0]?.id;
         if (existingId) {
+            // 다시 낸 신청서에도 새 신청과 같은 속도 제한(전화번호 기준 10분에 5번).
+            // 로그인 없이 같은 신청을 계속 고쳐 쓸 수 있는 길이라 횟수를 묶는다. 장부(상담 이력)를 못 읽으면 막지 않는다.
+            let recentResubmits = 0;
+            try {
+                recentResubmits = await countRecentTrialResubmits(prisma, normalizedPhoneDigits);
+            } catch (limitError) {
+                console.warn("[submitTrialApplication] 재제출 횟수 확인 실패:", (limitError as Error).message);
+            }
+            if (recentResubmits >= TRIAL_RESUBMIT_LIMIT) {
+                throw new TrialSubmitLimitError();
+            }
+            // 이 재제출이 «확정 전 일정»을 비우는가(아래 UPDATE 가 SCHEDULED 가 아니면 scheduledDate 를 NULL 로 만든다)
+            const clearsSchedule = trialResubmitClearsSchedule({
+                status: existingRows[0]?.status,
+                scheduledDate: (existingRows[0] as any)?.scheduledDate ?? (existingRows[0] as any)?.scheduleddate,
+            });
             await prisma.$executeRawUnsafe(
                 `UPDATE "TrialLead" SET
                     "childAge" = $1,
@@ -375,6 +484,42 @@ export async function submitTrialApplication(data: TrialApplicationInput) {
                 data.agreedPrivacy ?? false,
                 existingId,
             );
+
+            // ① 일정이 실제로 비워졌으면 그 날짜에 묶인 셔틀 배정은 푼다(일정이 바뀌는 것은 예전부터 있던 동작)
+            const scheduleRelease = clearsSchedule
+                ? await releaseTrialShuttleWithResult(existingId, "RESCHEDULED")
+                : { ok: true, released: 0 };
+            // ② 셔틀 요청: 배정됨·어려움은 건드리지 않고 메모+알림, 배정 전이면 바꾼다. «필요 없음»이면 전 요청 유지
+            //    (신청서는 예전 셔틀 요청을 다시 불러오지 않는다 — 기본값 «필요 없음»으로 조용히 지워지면 안 된다).
+            const shuttleOutcome = await applyTrialShuttleOnResubmit(existingId, shuttleColumns);
+
+            // ③ 이력 한 줄(속도 제한 장부를 겸한다)과 관리자 알림 — 실패해도 접수는 유지
+            const shuttleNote =
+                shuttleOutcome === "HOLD_FOR_ADMIN" ? "셔틀 변경 요청이 들어왔습니다(배정은 그대로 — 관리 메모 확인)."
+                : shuttleOutcome === "OVERWRITE" ? "셔틀 요청이 바뀌었습니다."
+                : shuttleOutcome === "MEMO_FALLBACK" ? "셔틀 요청을 관리 메모에 남겼습니다."
+                : "";
+            const scheduleNote = !scheduleRelease.ok ? "일정이 다시 접수됐는데 셔틀 배정을 풀지 못했습니다."
+                : scheduleRelease.released > 0 ? "일정이 다시 접수돼 셔틀 배정이 풀렸습니다."
+                : "";
+            try {
+                await recordTrialResubmitLog(prisma, existingId, ["학부모가 신청서를 다시 냈습니다.", scheduleNote, shuttleNote].filter(Boolean).join(" "));
+            } catch (logError) {
+                console.warn("[submitTrialApplication] 재제출 이력 저장 실패:", (logError as Error).message);
+            }
+            if (shuttleNote || scheduleNote) {
+                const title = shuttleOutcome === "HOLD_FOR_ADMIN" || scheduleNote ? "체험 셔틀 변경 요청 — 배정을 확인해 주세요" : "체험 셔틀 요청";
+                // 관리자 화면 알림만(문자 없음·코치 없음). 실패해도 접수는 유지
+                await Promise.allSettled([
+                    notifyAdmins(
+                        "TRIAL_APPLICATION",
+                        title,
+                        `${childName} — ${[scheduleNote, shuttleNote].filter(Boolean).join(" ")}`,
+                        "/admin/trial",
+                        { notifyCoaches: false },
+                    ),
+                ]);
+            }
 
             revalidatePath("/admin");
             revalidatePath("/admin/apply");
@@ -435,6 +580,9 @@ export async function submitTrialApplication(data: TrialApplicationInput) {
             data.agreedPrivacy ?? false,                          // agreedPrivacy
         );
 
+        // 셔틀 요청은 본문 저장 뒤 따로(실패해도 신청은 남고, 내용은 관리 메모로)
+        if (rows[0]?.id) await saveTrialShuttleForNewApplication(rows[0].id, shuttleColumns);
+
         // 관리자 페이지 캐시를 무효화해 새 신청이 바로 보이게 합니다.
         revalidatePath("/admin/trial");
         revalidatePath("/admin");
@@ -460,7 +608,8 @@ export async function submitTrialApplication(data: TrialApplicationInput) {
             notifyAdmins(
                 "TRIAL_APPLICATION",
                 "체험수업 신청",
-                `${childName} (${data.childGrade || "학년 미입력"}) - ${parentName}`,
+                // 관리자 화면 알림 문구에만 한 마디 덧붙인다(학부모 문자·알림톡 틀은 그대로)
+                `${childName} (${data.childGrade || "학년 미입력"}) - ${parentName}${shuttleColumns.shuttleNeeded ? " · 셔틀 요청 있음" : ""}`,
                 "/admin/trial",
                 {
                     adminTrigger: "TRIAL_NEW_ADMIN",
@@ -485,6 +634,7 @@ export async function submitTrialApplication(data: TrialApplicationInput) {
         const paymentToken = rows[0]?.id ? await issueTrialPaymentToken(rows[0].id) : null;
         return { success: true, id: trialLeadId, mode: "created" as const, paymentToken };
     } catch (e) {
+        if (e instanceof TrialSubmitLimitError) throw e;
         console.error("[submitTrialApplication] failed:", e);
         throw new Error("신청 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
     }

@@ -29,6 +29,8 @@ export function runBlockLabel(row: Pick<UnifiedRow, "kind" | "direction" | "grou
   // 그림문자·공백 같은 «글자 아닌 것»으로 시작하면 떼어 낸다(Material 아이콘을 따로 붙인다).
   const base = (row.groupLabel ?? "").replace(/^[^\p{L}\p{N}]+/u, "").trim();
   if (row.kind === "SEASONAL") return base ? `특강 · ${dir} · ${base}` : `특강 · ${dir}`;
+  // 체험 셔틀 줄이 혼자 묶음 머리를 가질 때(끼어들 정규 묶음을 못 찾았거나 그 묶음 맨 앞) — 정규 머리와 같은 글자가 되지 않게 구분한다
+  if (row.kind === "TRIAL") return base ? `체험 · ${dir} · ${base}` : `체험 · ${dir}`;
   if (!base) return `정규 · ${dir}`;
   return base.includes(dir) ? base : `${base} · ${dir}`;
 }
@@ -40,6 +42,10 @@ export function groupRunBlocks(rows: readonly UnifiedRow[]): RunBlock[] {
   for (const row of rows) {
     const last = blocks[blocks.length - 1];
     if (last && last.groupKey === row.groupKey) { last.rows.push(row); continue; }
+    // 체험 줄(2026-11-19)은 자기가 끼어든 정규 묶음이 바로 앞 블록이면 그 블록 안의 한 줄로 들어간다 —
+    // 체험 줄 하나 때문에 «16:00 수업 · 등원» 머리가 세 조각으로 나뉘지 않게. 순서는 그대로고 줄의 groupKey(T:…)도 그대로라
+    // 순서 편집·저장 대조(같은 groupKey 의 정규 줄만)에는 섞이지 않는다.
+    if (last && row.kind === "TRIAL" && row.hostGroupKey && row.hostGroupKey === last.groupKey) { last.rows.push(row); continue; }
     const n = seen.get(row.groupKey) ?? 0;
     seen.set(row.groupKey, n + 1);
     blocks.push({

@@ -27,6 +27,7 @@ import type { RunHoliday } from "@/lib/shuttle/regularRunDayRules";
 // 기사님은 위에서부터 순서대로 다니면 된다.
 // ★ 기사님 연세·운전 중 한 손 조작을 고려해 라이트 모드 고정 + 큰 글자·큰 버튼(dark: 미사용).
 // ⚠️ 탑승 체크는 행이 들고 있는 종류(kind)대로 **기존 API·기존 파라미터** 그대로 저장한다.
+//    체험 셔틀 줄(kind TRIAL, 2026-11-19)은 체험 전용 주소(trial-boarding)로 간다 — 정규·특강 저장 경로는 그대로다.
 
 // SELF = 자차(부모 차) 등·하원. 셔틀엔 안 탔지만 결석(안 옴)과는 구분한다.
 type Status = "BOARDED" | "NOSHOW" | "SELF";
@@ -254,7 +255,8 @@ export default function UnifiedDriverClient({
   // boardAnyway = «그래도 탑승»(자차·조퇴·지각으로 잠긴 줄을 탑승으로 기록). 휴원·휴무 잠금에는 통하지 않는다.
   async function setStatus(rider: UnifiedRider, next: Status | null, verifyOnly = false, boardAnyway = false) {
     const key = rider.key;
-    if ((accountRun && rider.kind !== "REGULAR") || !initialBoardingReliable || locks.current.has(key) || (!verifyOnly && saveStates[key]?.state === "unknown")) return;
+    // 로그인 운행표(계정)는 정규·체험 줄만 체크한다(특강 줄은 운행 링크 화면에서)
+    if ((accountRun && rider.kind === "SEASONAL") || !initialBoardingReliable || locks.current.has(key) || (!verifyOnly && saveStates[key]?.state === "unknown")) return;
     const cur = boarding[key] ?? null;
     // 게슈탈트 T-04: 이미 그 상태인 버튼을 다시 눌러도 아무 일 없게(운전 중 두 번 눌림으로 체크가 풀리던 문제).
     // 되돌리기는 아래 별도 «대기로 되돌리기» 글자 버튼만 한다.
@@ -271,9 +273,12 @@ export default function UnifiedDriverClient({
     setSaveStates((states) => ({ ...states, [key]: { state: "saving", message: verifyOnly ? "저장 상태 확인 중…" : "저장 중…" } }));
     try {
       // 🚨 저장 경로는 종류별로 예전 그대로. 파라미터 이름·저장 키를 바꾸면 과거 기록과 끊긴다.
-      const url = accountRun ? "/api/staff/shuttle/regular-boarding"
+      const url = rider.kind === "TRIAL" ? (accountRun ? "/api/staff/shuttle/trial-boarding" : "/api/shuttle/trial-boarding")
+        : accountRun ? "/api/staff/shuttle/regular-boarding"
         : rider.kind === "SEASONAL" ? "/api/shuttle/boarding" : "/api/shuttle/regular-boarding";
-      const body = accountRun ? { rowId: rider.checkId, status: target, date }
+      // 체험 줄의 저장 키 = 하루 탑승 id(rideId). 이름은 서버가 체험 신청에서 읽는다(화면 값을 믿지 않는다)
+      const body = rider.kind === "TRIAL" ? (accountRun ? { rideId: rider.checkId, status: target, date } : { token, rideId: rider.checkId, status: target, date })
+        : accountRun ? { rowId: rider.checkId, status: target, date }
         : rider.kind === "SEASONAL"
         ? { token, direction: rider.direction, shuttleRequestId: rider.checkId, status: target, studentName: rider.name, date }
         : { token, rowId: rider.checkId, status: target, studentName: rider.name, date };
@@ -381,6 +386,10 @@ export default function UnifiedDriverClient({
                 <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-sm font-semibold text-[var(--color-academy-on-primary)] ${skipLocked ? "bg-[var(--color-driver-self)]" : "bg-[var(--color-academy-neutral)]"}`}>
                   {lockLabel}
                 </span>
+              )}
+              {/* 체험 수업 학생(하루만 타는 아이) — 글자 «체험»(안내색). 기사님이 처음 보는 아이라는 걸 한눈에 알게 한다 */}
+              {rider.kind === "TRIAL" && (
+                <span className="inline-flex items-center rounded-md border border-[var(--color-academy-info)] bg-[var(--color-academy-info-soft)] px-2 py-0.5 text-sm font-semibold text-[var(--color-academy-info)]">체험</span>
               )}
               {rider.grade && <span className="text-sm text-[var(--color-academy-muted)]">{rider.grade}</span>}
               {/* 건강·알레르기·특이사항(학부모 입력) — 글자 «특이», 누르면 줄 아래에 내용. 누르는 영역 44px.
