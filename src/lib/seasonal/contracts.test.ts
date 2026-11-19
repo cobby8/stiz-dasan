@@ -227,10 +227,19 @@ test("수강 기간은 시작·종료가 둘 다 있거나 둘 다 없어야 하
 });
 
 test("요일 모드에 날짜가 섞여 와도 버린다(출석 규칙이 뒤바뀌지 않게)", () => {
-  const weekday = parseApplicationInput({ ...validApplication(), selectedDates: ["2027-01-04"], weeklyFrequency: 3 });
+  const weekday = parseApplicationInput({ ...validApplication(), selectedDates: ["2027-01-04"] });
   assert.deepEqual(weekday.selectedDates, []);
-  // 요일 모드는 요일 수가 곧 N — 주N회 값은 싣지 않는다
+  // 주N회를 안 보낸 요일 모드(옛 화면)는 요일 수가 곧 N — 주N회 값은 싣지 않는다
   assert.equal(weekday.weeklyFrequency, undefined);
+  // 2026-11-19: 요일 모드도 주N회를 보내면 싣는다(요일 수와 같아야 함 — 요일 1개 = 주1회)
+  const withFrequency = parseApplicationInput({ ...validApplication(), selectedDates: ["2027-01-04"], weeklyFrequency: 1 });
+  assert.deepEqual(withFrequency.selectedDates, []);
+  assert.equal(withFrequency.weeklyFrequency, 1);
+  // 요일 수와 다르면 400 WEEKDAY_COUNT_MISMATCH
+  assert.throws(
+    () => parseApplicationInput({ ...validApplication(), weeklyFrequency: 3 }),
+    (error: unknown) => (error as { code?: string }).code === "WEEKDAY_COUNT_MISMATCH",
+  );
 });
 
 test("날짜 모드도 기간을 받는다(2026-11-18 «기간 → 주N회 → 날짜»)", () => {

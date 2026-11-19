@@ -3,6 +3,12 @@
 import { seatLevel as toSeatLevel, type SeatLevel } from "../../lib/seats/seatLevel.ts";
 // @ts-expect-error 같은 이유(Node 타입 제거 테스트가 이 파일을 바로 읽는다) — 날짜는 공용 KST 모듈만 쓴다.
 import { toKstYmd } from "../../lib/datetime/kst.ts";
+// «반 = 교시 하나» 묶음(2026-11-19 원장) — 공개 목록·상세·신청 화면·관리자·서버가 같은 규칙 하나를 쓴다
+// @ts-expect-error 같은 이유(Node 타입 제거 테스트가 이 파일을 바로 읽는다).
+import { groupOfferingsByClass, groupPriceRows, type GroupPriceRow, type OfferingFrequencyGroup } from "../../lib/seasonal/offering-groups.ts";
+// @ts-expect-error 같은 이유 — 화면이 «./types» 하나로 묶음 규칙을 함께 가져가게 다시 내보낸다.
+export { offeringBaseTitle, offeringTitleWithFrequency } from "../../lib/seasonal/offering-groups.ts";
+export type { GroupPriceRow } from "../../lib/seasonal/offering-groups";
 
 export type SeasonalSessionDate = {
   /** 회차의 KST 날짜 'YYYY-MM-DD' — 날짜별 신청의 열쇠(서버가 안 보내면 startsAt 으로 만든다) */
@@ -207,6 +213,54 @@ export function seasonalApplicationStatusLabel(status: string) {
 
 export function programClasses(program: SeasonalProgram) {
   return program.offerings ?? program.classes ?? [];
+}
+
+/**
+ * 공개 화면의 «반 카드» 하나 = 같은 운영 반(교시)의 주2회·주3회·매일(주5회) 반 묶음(2026-11-19 원장).
+ *   base     = 카드를 대표하는 반(횟수가 가장 작은 반) — 시간·대상·장소·셔틀은 묶음 공통
+ *   seat     = 남은 자리 3단계 — 묶음 안 «가장 여유 없는» 값(숫자 없이 · 재원생 수 비공개)
+ *   priceRows= 횟수(·기간)별 신입생·재원생 수강료 표
+ *   sessionDates = 묶음 전체 회차(같은 날·같은 시각은 한 줄)
+ */
+export type SeasonalClassGroup = OfferingFrequencyGroup<SeasonalClass> & {
+  base: SeasonalClass;
+  seat: Pick<SeasonalClass, "capacity" | "seatLevel" | "waitlistEnabled">;
+  priceRows: GroupPriceRow[];
+  sessionDates: SeasonalSessionDate[];
+};
+
+/** 묶음의 남은 자리 — 정원 없는 반만 있으면 «학원 문의», 하나라도 모르면 null(학원 문의), 아니면 가장 빡빡한 단계 */
+function groupSeat(items: readonly SeasonalClass[]): SeasonalClassGroup["seat"] {
+  const limited = items.filter((item) => item.capacity !== null);
+  if (limited.length === 0) return { capacity: null, seatLevel: null, waitlistEnabled: items.some((item) => item.waitlistEnabled === true) };
+  const levels = limited.map((item) => item.seatLevel);
+  const seatLevel: SeatLevel | null = levels.includes(null) ? null
+    : levels.includes("FULL") ? "FULL" : levels.includes("LOW") ? "LOW" : "AVAILABLE";
+  return { capacity: limited[0].capacity, seatLevel, waitlistEnabled: limited.some((item) => item.waitlistEnabled === true) };
+}
+
+/** 시즌의 반들을 «교시 카드»로 묶는다. 묶음 순서 = 관리자 표시 순서(처음 나온 반 기준) */
+export function programClassGroups(program: SeasonalProgram): SeasonalClassGroup[] {
+  return groupOfferingsByClass(programClasses(program), (item: SeasonalClass) => item.name).map((group: OfferingFrequencyGroup<SeasonalClass>) => {
+    const members = group.options.map((option) => option.offering);
+    // 회차는 날짜·시작 시각이 같으면 한 줄(주2회·주3회 반이 같은 교실·같은 시각이라 겹친다)
+    const sessions = new Map<string, SeasonalSessionDate>();
+    for (const member of members) {
+      for (const session of member.sessionDates) {
+        const key = `${session.dateKey}|${session.startTime}`;
+        const prev = sessions.get(key);
+        // 같은 회차가 한 반에서라도 «마감»이면 마감으로 보인다(안전한 쪽)
+        sessions.set(key, prev ? { ...prev, full: prev.full || session.full } : session);
+      }
+    }
+    return {
+      ...group,
+      base: members[0],
+      seat: groupSeat(members),
+      priceRows: groupPriceRows(group),
+      sessionDates: [...sessions.values()].sort((a, b) => a.startsAt.localeCompare(b.startsAt)),
+    };
+  });
 }
 
 type ApiRecord = Record<string, unknown>;

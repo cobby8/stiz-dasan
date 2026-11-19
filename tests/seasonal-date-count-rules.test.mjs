@@ -121,8 +121,8 @@ test("서버: 날짜 모드도 주N회 반·기간 가격(요일 모드와 같�
   assert.doesNotMatch(routeSource, /dateSelectTuition/);
   assert.doesNotMatch(adminClientSource, /dateSelectTuition/);
   assert.equal(pricing.dateSelectTuition, undefined);
-  // 두 모드 공통: N = 날짜 모드는 weeklyFrequency, 요일 모드는 요일 수
-  assert.match(serviceSource, /const frequency = isDateMode \? Number\(request\.weeklyFrequency\) : selectedWeekdays\.length/);
+  // 두 모드 공통: N = 고른 weeklyFrequency(2026-11-19 요일 모드도 보낸다), 안 보낸 옛 요일 모드만 요일 수
+  assert.match(serviceSource, /const frequency = isDateMode \|\| request\.weeklyFrequency != null \? Number\(request\.weeklyFrequency\) : selectedWeekdays\.length/);
   // 정상 수강료는 두 모드가 같은 식, 날짜 모드만 남은 회차 비율(2026-11-18 중간 합류)
   assert.match(serviceSource, /const normalPrice = period \? resolvePeriodPrice\(period, applicantType\) : resolveOfferingPrice\(offering, applicantType\)/);
   assert.match(serviceSource, /priceSnapshot: proration \? proratedPrice\(normalPrice, proration\.remainingCount, proration\.fullCount\) : normalPrice/);

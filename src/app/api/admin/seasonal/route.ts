@@ -16,7 +16,8 @@ import { resolveOfferingPrice, resolveShuttleFee, type ApplicantType } from "@/l
 import { syncSeasonSiblingDiscounts } from "@/lib/seasonal/sibling-discount-sync";
 // 기간 선택·날짜별 선택(2026-11-18) — 출석 규칙·가격 계산은 공용 부품만 쓴다(여기서 다시 만들지 않는다)
 import { seasonalAttendsSql } from "@/lib/seasonal/attendance-rule";
-import { applicationUsesPeriodOrDate, proratedPrice, resolvePeriodPrice, usesPeriodOrDateFeatures } from "@/lib/seasonal/period-pricing";
+import { applicationUsesPeriodOrDate, offeringWeeklyFrequency, proratedPrice, resolvePeriodPrice, usesPeriodOrDateFeatures } from "@/lib/seasonal/period-pricing";
+import { offeringTitleWithFrequency } from "@/lib/seasonal/offering-groups";
 // 재원 판정 SQL 은 공개 신청과 같은 함수 하나(승인 화면 «재원 확인 필요» 경고 · 2026-11-18)
 import { hasMatchingExistingStudent, openScopeOfferingWhere } from "@/lib/seasonal/service";
 import {
@@ -142,7 +143,7 @@ async function notifyItemStatus(result: Awaited<ReturnType<typeof updateSpecialP
     variables: {
       childName: result.before.application.childName,
       parentName: result.before.application.parentName,
-      offeringTitle: result.before.offering.title,
+      offeringTitle: offeringTitleWithFrequency(result.before.offering),
       seasonTitle: "",
       waitlistOrder: result.item.waitlistOrder ? String(result.item.waitlistOrder) : "",
     },
@@ -154,9 +155,10 @@ async function notifyItemStatus(result: Awaited<ReturnType<typeof updateSpecialP
  * 신청 항목 제목을 합치고(항목 단위 알림과 같은 offering.title), 대기순번은 순번이 있는 항목만 모은다.
  * 순번이 하나도 없으면 빈 값 → 알림톡 금고가 빈 변수로 판단해 옛 문자 문구로 대체한다.
  */
-function applicationSmsSummary(items: Array<{ waitlistOrder: number | null; offering: { title: string } }>) {
+function applicationSmsSummary(items: Array<{ waitlistOrder: number | null; offering: { title: string; code?: string | null } }>) {
   return {
-    offeringTitle: items.map((item) => item.offering.title).filter(Boolean).join(", "),
+    // 반 이름에서 «주N회»를 뺐어도 문자에는 «초등 고학년 주2회»처럼 횟수를 붙인다(2026-11-19)
+    offeringTitle: items.map((item) => offeringTitleWithFrequency(item.offering)).filter(Boolean).join(", "),
     waitlistOrder: items.map((item) => item.waitlistOrder).filter((order): order is number => typeof order === "number" && order > 0).join(", "),
   };
 }
@@ -166,11 +168,11 @@ async function loadApplicationSmsSummary(applicationId: string) {
   // (빈 특강명이면 금고 틀을 못 채워 옛 문구 문자로 대체된다)
   const items = await prisma.specialProgramApplicationItem.findMany({
     where: { applicationId },
-    select: { waitlistOrder: true, offering: { select: { title: true } } },
+    select: { waitlistOrder: true, offering: { select: { title: true, code: true } } },
     orderBy: { createdAt: "asc" },
   }).catch((error: unknown) => {
     console.error("[seasonal] application sms summary failed:", (error as Error)?.message);
-    return [] as Array<{ waitlistOrder: number | null; offering: { title: string } }>;
+    return [] as Array<{ waitlistOrder: number | null; offering: { title: string; code?: string | null } }>;
   });
   return applicationSmsSummary(items);
 }
@@ -461,7 +463,7 @@ async function updateSpecialProgramItemStatus(
 ) {
   const before = await tx.specialProgramApplicationItem.findUnique({
     where: { id: params.itemId },
-    include: { application: true, offering: { select: { title: true } } },
+    include: { application: true, offering: { select: { title: true, code: true } } },
   });
   if (!before) throw new SeasonalError("신청 항목을 찾을 수 없습니다.", 404);
   if (params.status === "APPROVED" && (before.application.requiresReview || before.application.reviewReasons.length > 0)) {
@@ -545,11 +547,9 @@ function seasonalApplicantType(value?: string | null): ApplicantType | undefined
   return value === "EXISTING" || value === "NEW" ? value : undefined;
 }
 
+// 반 이름 «주N회» 또는 코드 끝 «-N» — 공개 신청·화면과 같은 함수 하나(2026-11-19)
 function seasonalOfferingFrequency(offering: { title?: string | null; code?: string | null }) {
-  const source = `${offering.title ?? ""} ${offering.code ?? ""}`;
-  const matched = source.match(/주\s*(\d+)\s*회|-(\d)(?:\D|$)/i);
-  const value = matched ? Number(matched[1] ?? matched[2]) : NaN;
-  return Number.isInteger(value) && value > 0 ? value : null;
+  return offeringWeeklyFrequency(offering);
 }
 
 async function offeringSessionWeekdays(tx: Prisma.TransactionClient, offeringId: string) {
@@ -647,7 +647,7 @@ async function resolveSpecialProgramAssignment(
       where: { offeringId: offering.id, startDate: params.periodRange.startDate, endDate: params.periodRange.endDate },
     });
     if (!period) {
-      throw new SeasonalError(`${offering.title} 반에 그 기간(${params.periodRange.startDate}~${params.periodRange.endDate}) 수강료가 없습니다. 반의 «기간별 수강료»를 먼저 넣어 주세요.`, 400, "PERIOD_NOT_FOUND");
+      throw new SeasonalError(`${offeringTitleWithFrequency(offering)} 반에 그 기간(${params.periodRange.startDate}~${params.periodRange.endDate}) 수강료가 없습니다. 반의 «기간별 수강료»를 먼저 넣어 주세요.`, 400, "PERIOD_NOT_FOUND");
     }
     const normalPrice = resolvePeriodPrice(period, applicantType);
     const proration = await dateModeProration(period);
@@ -1108,7 +1108,8 @@ async function saveSpecialProgramItemAssignment(
     where: { id: before.id },
     data: {
       offeringId: offering.id,
-      titleSnapshot: offering.title,
+      // 반 이름에 횟수가 없으면 코드의 횟수를 붙여 남긴다(공개 신청과 같은 규칙 · 2026-11-19)
+      titleSnapshot: offeringTitleWithFrequency(offering),
       tuitionPriceSnapshot: assignment.priceSnapshot,
       shuttleFeeSnapshot,
       // 할인은 아래 syncSeasonSiblingDiscounts가 "할인 전 수강료"에서 다시 계산해 덮어쓴다.
@@ -1188,7 +1189,8 @@ async function createSpecialProgramApplicationItem(
     data: {
       applicationId: application.id,
       offeringId: offering.id,
-      titleSnapshot: offering.title,
+      // 반 이름에 횟수가 없으면 코드의 횟수를 붙여 남긴다(공개 신청과 같은 규칙 · 2026-11-19)
+      titleSnapshot: offeringTitleWithFrequency(offering),
       priceSnapshot: assignment.priceSnapshot,
       tuitionPriceSnapshot: assignment.priceSnapshot,
       siblingDiscountSnapshot: 0,
@@ -1604,7 +1606,7 @@ async function retrySeasonalNotification(params: { id: string; scope: string; tr
     if (!allowed.has(params.trigger)) throw new SeasonalError("신청서에서 재발송할 수 없는 알림입니다.", 400, "INVALID_NOTIFICATION_TRIGGER");
     const application = await prisma.specialProgramApplication.findUnique({
       where: { id: params.id },
-      include: { season: { select: { title: true } }, items: { include: { offering: { select: { title: true } } } } },
+      include: { season: { select: { title: true } }, items: { include: { offering: { select: { title: true, code: true } } } } },
     });
     if (application) {
       const expectedTrigger: SeasonalSmsTrigger | undefined = application.status === "PENDING" ? SEASONAL_SMS_TRIGGERS.received
@@ -1632,7 +1634,7 @@ async function retrySeasonalNotification(params: { id: string; scope: string; tr
     return manualRetrySeasonalSms({
       trigger: params.trigger, applicationId: item.applicationId, itemId: item.id, recipientPhone: item.application.parentPhone,
       variables: { childName: item.application.childName, parentName: item.application.parentName, seasonTitle: item.offering.season.title,
-        offeringTitle: item.offering.title, waitlistOrder: item.waitlistOrder ? String(item.waitlistOrder) : "" }, deliveryRunId,
+        offeringTitle: offeringTitleWithFrequency(item.offering), waitlistOrder: item.waitlistOrder ? String(item.waitlistOrder) : "" }, deliveryRunId,
     });
   }
   if (params.scope !== "invoice") throw new SeasonalError("알림 재발송 범위가 올바르지 않습니다.", 400, "INVALID_NOTIFICATION_SCOPE");
@@ -1652,7 +1654,7 @@ async function retrySeasonalNotification(params: { id: string; scope: string; tr
       applicationId: item.applicationId, itemId: item.id, invoiceId: validationInvoice.id,
       parentId: validationInvoice.parentId, recipientPhone: item.application.parentPhone,
       variables: { childName: item.application.childName, parentName: item.application.parentName,
-        seasonTitle: item.offering.season.title, offeringTitle: item.offering.title }, deliveryRunId,
+        seasonTitle: item.offering.season.title, offeringTitle: offeringTitleWithFrequency(item.offering) }, deliveryRunId,
     });
     return retried.notification;
   }
@@ -1663,7 +1665,7 @@ async function retrySeasonalNotification(params: { id: string; scope: string; tr
     trigger: params.trigger, applicationId: item.applicationId, itemId: item.id, recipientPhone: item.application.parentPhone,
     recipientUserId: invoice.parentId,
     variables: { childName: item.application.childName, parentName: item.application.parentName, seasonTitle: item.offering.season.title,
-      offeringTitle: item.offering.title, paymentUrl: publicUrl(`/payments/${encodeURIComponent(invoice.id)}`), amount: String(invoice.amount),
+      offeringTitle: offeringTitleWithFrequency(item.offering), paymentUrl: publicUrl(`/payments/${encodeURIComponent(invoice.id)}`), amount: String(invoice.amount),
       dueDate: invoice.dueDate.toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul" }) }, deliveryRunId,
   });
 }
@@ -2274,7 +2276,7 @@ async function convertApprovedItemToEnrollmentAndInvoice(itemId: string, actorId
       parentName: item.application.parentName,
       childName: item.application.childName,
       seasonTitle: item.offering.season.title,
-      offeringTitle: item.offering.title,
+      offeringTitle: offeringTitleWithFrequency(item.offering),
       amount: item.priceSnapshot,
     };
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
@@ -2368,9 +2370,9 @@ async function convertApprovedItemToEnrollmentAndInvoice(itemId: string, actorId
 }
 
 async function accountClaimTargetForItem(itemId: string) {
-  const rows = await prisma.$queryRawUnsafe<Array<{ parentId: string; applicationId: string; invoiceId: string; parentPhone: string; parentName: string; childName: string; seasonTitle: string; offeringTitle: string }>>(
+  const rows = await prisma.$queryRawUnsafe<Array<{ parentId: string; applicationId: string; invoiceId: string; parentPhone: string; parentName: string; childName: string; seasonTitle: string; offeringTitle: string; offeringCode: string | null }>>(
     `SELECT i."parentId", item."applicationId", i.id AS "invoiceId",
-            app."parentPhone", app."parentName", app."childName", season.title AS "seasonTitle", offering.title AS "offeringTitle"
+            app."parentPhone", app."parentName", app."childName", season.title AS "seasonTitle", offering.title AS "offeringTitle", offering.code AS "offeringCode"
        FROM "SpecialProgramApplicationItem" item
        JOIN "PaymentInvoice" i ON i."paymentId" = item."paymentId"
        JOIN "SpecialProgramApplication" app ON app.id = item."applicationId"
@@ -2379,9 +2381,11 @@ async function accountClaimTargetForItem(itemId: string) {
       WHERE item.id = $1 LIMIT 1`,
     itemId,
   );
-  const target = rows[0];
-  if (!target) throw new SeasonalError("계정 활성화 대상 청구서를 찾을 수 없습니다.", 404, "ACCOUNT_CLAIM_TARGET_NOT_FOUND");
-  return target;
+  const row = rows[0];
+  if (!row) throw new SeasonalError("계정 활성화 대상 청구서를 찾을 수 없습니다.", 404, "ACCOUNT_CLAIM_TARGET_NOT_FOUND");
+  // 문자에 쓰는 반 이름 — 이름에 횟수가 없으면 코드의 횟수를 붙인다(2026-11-19)
+  const { offeringCode, ...target } = row;
+  return { ...target, offeringTitle: offeringTitleWithFrequency({ title: row.offeringTitle, code: offeringCode }) };
 }
 
 export async function DELETE(request: NextRequest) {

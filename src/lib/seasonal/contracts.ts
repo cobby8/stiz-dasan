@@ -37,7 +37,8 @@ export type SeasonalApplicationInput = {
   periodStartDate?: string;
   periodEndDate?: string;
   /**
-   * 날짜 모드에서 고른 «주N회»(2026-11-18 원장 결정). 요일 모드는 고른 요일 수가 곧 N 이라 보내지 않는다.
+   * 고른 «주N회»(2026-11-18 원장 결정). 날짜 모드는 필수.
+   * 요일 모드는 2026-11-19부터 화면이 함께 보낸다(요일 수 = N 이어야 함). 안 보내면 요일 수가 곧 N(옛 화면 호환).
    * 서버는 이 N 으로 주N회 반·가격을 고르고, «N × 회차가 있는 주 수»만큼 날짜를 골랐는지 본다.
    */
   weeklyFrequency?: number;
@@ -198,6 +199,27 @@ export function parseShuttleLocation(
   };
 }
 
+/** 화면이 «주 몇 회»를 실어 보냈는가(빈 값·null 은 안 보낸 것 = 옛 화면) */
+function hasWeeklyFrequency(value: unknown): boolean {
+  return value !== undefined && value !== null && value !== "";
+}
+
+/**
+ * 요일 모드 «주N회 = 고른 요일 수» 검사(2026-11-19). 서버(service.ts)도 같은 함수로 한 번 더 본다.
+ *   weeklyFrequency 를 안 보냈으면 검사하지 않는다(옛 화면·회원 앱 호환 — 요일 수가 곧 횟수).
+ *   1~7 정수가 아니면 400 FREQUENCY_REQUIRED, 요일 수가 다르면 400 WEEKDAY_COUNT_MISMATCH «주2회는 요일 2개를 골라 주세요».
+ */
+export function assertWeekdayCountMatchesFrequency(selectedCount: number, weeklyFrequency: unknown): void {
+  if (!hasWeeklyFrequency(weeklyFrequency)) return;
+  const frequency = Number(weeklyFrequency);
+  if (!Number.isInteger(frequency) || frequency < 1 || frequency > 7) {
+    throw new SeasonalError("주 몇 회 수업인지 먼저 골라 주세요.", 400, "FREQUENCY_REQUIRED");
+  }
+  if (selectedCount !== frequency) {
+    throw new SeasonalError(`주${frequency}회는 요일 ${frequency}개를 골라 주세요.`, 400, "WEEKDAY_COUNT_MISMATCH", { required: frequency, selected: selectedCount });
+  }
+}
+
 export function parseApplicationInput(value: unknown): SeasonalApplicationInput {
   const body = value as Partial<SeasonalApplicationInput> | null;
   const key = cleanText(body?.idempotencyKey, 120);
@@ -240,6 +262,9 @@ export function parseApplicationInput(value: unknown): SeasonalApplicationInput 
     }
   } else {
     if (selectedWeekdays.length === 0) throw new SeasonalError("수강할 요일을 한 개 이상 선택해 주세요.", 400, "WEEKDAY_REQUIRED");
+    // 요일 모드도 «주 몇 회»를 먼저 고른다(2026-11-19 원장 «횟수는 신청 학생이 선택하는 옵션»).
+    //   보냈으면 요일 수가 그 횟수와 같아야 한다. 안 보냈으면(옛 화면·회원 앱) 지금처럼 요일 수로 횟수를 정한다.
+    assertWeekdayCountMatchesFrequency(selectedWeekdays.length, body?.weeklyFrequency);
   }
 
   const seen = new Set<string>();
@@ -300,8 +325,8 @@ export function parseApplicationInput(value: unknown): SeasonalApplicationInput 
     selectedDates: selectionMode === "DATE" ? selectedDates : [],
     // 기간은 두 모드 모두 쓴다(2026-11-18 — 날짜 모드도 «기간 → 주N회 → 날짜» 순서로 고른다).
     ...period,
-    // 주N회는 날짜 모드에서만 싣는다(요일 모드는 요일 수가 곧 N).
-    ...(selectionMode === "DATE" ? { weeklyFrequency: Number(body?.weeklyFrequency) } : {}),
+    // 주N회 — 날짜 모드는 필수. 요일 모드는 보냈을 때만 싣는다(위에서 요일 수와 같은지 이미 확인 · 2026-11-19).
+    ...(selectionMode === "DATE" || hasWeeklyFrequency(body?.weeklyFrequency) ? { weeklyFrequency: Number(body?.weeklyFrequency) } : {}),
     child: {
       name: childName,
       birthDate: birth.toISOString(),

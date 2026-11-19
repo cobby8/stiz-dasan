@@ -8,7 +8,7 @@ import {
 } from "@/lib/seasonal/notifications";
 import { notifyAdmins } from "@/lib/notification";
 import { prisma } from "@/lib/prisma";
-import { SeasonalError, type SeasonalApplicationInput, type SeasonalWeekday } from "./contracts";
+import { SeasonalError, assertWeekdayCountMatchesFrequency, type SeasonalApplicationInput, type SeasonalWeekday } from "./contracts";
 import { decideApplicantType, hasSeasonalShuttleSelection, isFreeHubShuttle, resolveOfferingPrice, resolveShuttleFee, totalSnapshot, weekdayInSeoul } from "./planning";
 import { getSettings } from "./shuttle-optimize";
 import { syncSeasonSiblingDiscounts } from "./sibling-discount-sync";
@@ -27,7 +27,9 @@ import {
   resolvePeriodPrice,
   resolvePeriodShuttleFee,
   usesPeriodOrDateFeatures,
+  offeringWeeklyFrequency,
 } from "./period-pricing";
+import { offeringTitleWithFrequency } from "./offering-groups";
 import {
   activePeriods,
   assertDateCount,
@@ -73,10 +75,9 @@ function publicStatus(season: { status: string; applicationOpensAt: Date; applic
   return "OPEN";
 }
 
+// 반 이름 «주N회» 또는 코드 끝 «-N» — 화면·관리자와 같은 함수 하나(2026-11-19 반 이름에서 횟수를 빼도 코드로 안다)
 function seasonalOfferingFrequency(offering: Pick<AssignmentOffering, "title" | "code">) {
-  const matched = `${offering.title ?? ""} ${offering.code ?? ""}`.match(/주\s*(\d+)\s*회|-(\d)(?:\D|$)/i);
-  const value = matched ? Number(matched[1] ?? matched[2]) : NaN;
-  return Number.isInteger(value) && value > 0 ? value : null;
+  return offeringWeeklyFrequency(offering);
 }
 
 function offeringScopeWhere(offering: Pick<AssignmentOffering, "id" | "seasonId" | "linkedClassId">) {
@@ -125,7 +126,9 @@ async function resolvePublicOfferingAssignment(
   if (isDateMode && !season.dateSelectEnabled) {
     throw new SeasonalError("이 특강은 날짜별 신청을 받지 않습니다.", 400, "DATE_SELECT_DISABLED");
   }
-  const frequency = isDateMode ? Number(request.weeklyFrequency) : selectedWeekdays.length;
+  // 요일 모드: 화면이 «주 몇 회»를 보냈으면 그 값(요일 수와 같아야 함 — 2026-11-19), 안 보냈으면 요일 수(옛 화면 호환)
+  if (!isDateMode) assertWeekdayCountMatchesFrequency(selectedWeekdays.length, request.weeklyFrequency);
+  const frequency = isDateMode || request.weeklyFrequency != null ? Number(request.weeklyFrequency) : selectedWeekdays.length;
 
   const frequencyCandidates = candidates.filter((candidate) => seasonalOfferingFrequency(candidate) !== null);
   const offering = frequencyCandidates.length
@@ -133,7 +136,7 @@ async function resolvePublicOfferingAssignment(
     : target;
   if (!offering) {
     throw new SeasonalError(
-      isDateMode ? `주${frequency}회 수강료가 설정되지 않았습니다.` : `선택한 ${selectedWeekdays.length}개 요일에 맞는 수강료가 설정되지 않았습니다.`,
+      isDateMode || request.weeklyFrequency != null ? `주${frequency}회 수강료가 설정되지 않았습니다.` : `선택한 ${selectedWeekdays.length}개 요일에 맞는 수강료가 설정되지 않았습니다.`,
       409,
       "OFFERING_FREQUENCY_NOT_CONFIGURED",
     );
@@ -741,7 +744,8 @@ export async function submitSeasonalApplication(slug: string, input: SeasonalApp
           tuitionPriceSnapshot: assignment.priceSnapshot,
           shuttleFeeSnapshot,
           priceSnapshot: assignment.priceSnapshot + shuttleFeeSnapshot,
-          titleSnapshot: itemTitleSnapshot(assignment.offering.title, {
+          // 반 이름에서 «주N회»를 뺐어도(«초등 고학년») 코드의 횟수를 붙여 남긴다 — 문자·청구서에 «무엇을» 신청했는지 보이게
+          titleSnapshot: itemTitleSnapshot(offeringTitleWithFrequency(assignment.offering), {
             mode: input.selectionMode,
             dateCount: input.selectedDates.length,
             periodLabel: assignment.period?.label,

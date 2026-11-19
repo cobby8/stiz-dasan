@@ -15,6 +15,9 @@ import { SeasonalError, type SeasonalWeekday } from "./contracts.ts";
 import type { OfferingPeriodLike } from "./period-pricing";
 // @ts-expect-error -- Node 타입 제거 기반 단위 테스트는 런타임 확장자를 요구한다.
 import { isPeriodClosed } from "./period-pricing.ts";
+// 반 이름의 횟수 빼기 규칙(«반 = 교시 하나» 묶음과 같은 함수 · 2026-11-19)
+// @ts-expect-error -- Node 타입 제거 기반 단위 테스트는 런타임 확장자를 요구한다.
+import { offeringBaseTitle } from "./offering-groups.ts";
 
 // kstDow 결과(0=일 … 6=토)를 요일 키로
 const WEEKDAY_BY_DOW: readonly SeasonalWeekday[] = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
@@ -35,10 +38,12 @@ export function weekdaysFromDates(dates: readonly string[]): SeasonalWeekday[] {
   return WEEKDAY_ORDER.filter((weekday) => found.has(weekday));
 }
 
-/** 반 이름에서 «주N회»를 뺀 이름. 예: "슈팅 주2회" → "슈팅". 다 지워지면 원래 이름. */
+/**
+ * 반 이름에서 «주N회»를 뺀 이름. 예: "슈팅 주2회" → "슈팅". 다 지워지면 원래 이름.
+ * «매일(주5회)»도 통째로 뺀다(2026-11-19 — 예전엔 «매일( )»이 남았다). 규칙은 offering-groups 한 곳.
+ */
 export function stripWeeklyFrequency(title: string): string {
-  const stripped = title.replace(/\s*주\s*\d+\s*회\s*/g, " ").replace(/\s+/g, " ").trim();
-  return stripped || title.trim();
+  return offeringBaseTitle(title);
 }
 
 /**

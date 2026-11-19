@@ -23,10 +23,13 @@ test("승하차 지도 위치와 별도 위치 동의가 신청 payload에 포�
 test("선택한 특강 일정의 요일을 기존 필수 신청 계약에 포함한다", () => {
   assert.match(apply, /const \[selectedWeekdayKeys, setSelectedWeekdayKeys\]/);
   assert.match(apply, /function toggleWeekday/);
-  assert.match(apply, /const selectedWeekdays = selectedWeekdayKeys\.filter/);
+  // 2026-11-19: 고른 요일(pickedWeekdays) — 매일반은 모든 요일 자동(autoAllWeekdays)
+  assert.match(apply, /const pickedWeekdays = selectedWeekdayKeys\.filter/);
+  assert.match(apply, /const selectedWeekdays = autoAllWeekdays \? availableWeekdays : pickedWeekdays/);
   // 2026-11-18: 날짜 모드도 «주N회»로 반을 고르게 되어 matchingOfferingForWeekdays → matchingOfferingForCount(요일 모드는 요일 수)
   assert.match(apply, /matchingOfferingForCount\(offerings, item, frequencyCount\)/);
-  assert.match(apply, /const frequencyCount = isDateMode \? \(weeklyFrequency \?\? 0\) : selectedWeekdays\.length/);
+  // 2026-11-19: 횟수 반이 있는 교시면 요일 모드도 먼저 고른 주N회(asksFrequency), 옛 시즌 요일 모드만 요일 수
+  assert.match(apply, /const frequencyCount = asksFrequency \? \(weeklyFrequency \?\? 0\) : selectedWeekdays\.length/);
   assert.match(apply, /selectedWeekdays,/);
 });
 
