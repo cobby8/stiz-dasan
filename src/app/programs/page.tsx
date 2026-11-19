@@ -148,6 +148,9 @@ export default async function ProgramsPage() {
                                                     fill
                                                     className="object-cover"
                                                     sizes="(max-width: 768px) 100vw, 50vw"
+                                                    // 첫 카드 사진은 휴대폰 첫 화면의 가장 큰 그림이라 바로 받는다(2026-11-19 속도 4회차 —
+                                                    // 기본값 «나중에 불러오기»라 사진 요청이 2.5초 늦게 시작했다). 나머지는 그대로 나중에.
+                                                    priority={i === 0}
                                                 />
                                             </div>
                                         )}
