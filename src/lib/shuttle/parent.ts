@@ -124,6 +124,12 @@ export async function getParentShuttleOverview(
   // studentIds: 이 자녀만(«아이 기록»은 보는 아이 하나). 내 자녀 범위(childAccessWhere) 안에서만 좁힌다 — 범위를 넓히지 않는다
   options: { includeRoster?: boolean; studentIds?: readonly string[] } = {},
 ): Promise<ParentShuttleOverviewItem[]> {
+  // 방학특강 확정 명단은 «내 자녀가 누구인지»와 상관없이 같은 결과다 — 자녀 찾기(DB 왕복 여러 번)와 동시에 출발시킨다
+  // (2026-11-19 속도 8회차: 운영 학부모 홈에서 셔틀 조회가 0.64~0.73초로 홈 전체 시간을 정했다).
+  // 실패 처리는 예전과 같다 — 아래 Promise.all 에서 기다리다 실패하면 이 함수가 실패한다(호출부가 빈 목록으로 받는다).
+  // 자녀가 없어 일찍 돌아가면 아무도 기다리지 않으므로, 그때 실패가 «처리 안 된 오류»로 새지 않게 빈 처리기를 붙여 둔다.
+  const seasonalRosterP = getConfirmedShuttleRoster();
+  seasonalRosterP.catch(() => {});
   const accessible = await prisma.student.findMany({
     // 병합으로 흡수된 학생은 학부모 마이페이지에서도 보이지 않아야 한다
     where: { ...await childAccessWhere(appUserId), ...NOT_MERGED_STUDENT },
@@ -181,7 +187,8 @@ export async function getParentShuttleOverview(
     }),
     // ⚠️ 셔틀 대상자는 원본 테이블에서 직접 찾지 않는다. 게이트웨이만 통과한다.
     // 자녀 필터는 게이트웨이가 준 studentId(전환 완료된 경우에만 채워진다)로 아래에서 건다.
-    getConfirmedShuttleRoster(),
+    // (맨 위에서 이미 출발시켰다)
+    seasonalRosterP,
     prisma.$queryRawUnsafe<RegularApplicationRow[]>(
       `SELECT id, "childName", "childBirthDate", "convertedStudentId", "assignedClassId"
          FROM "EnrollmentApplication"
@@ -203,8 +210,9 @@ export async function getParentShuttleOverview(
     (entry) => entry.ride && entry.studentId != null && studentIds.includes(entry.studentId),
   );
   // 확정 명단에 붙은 실제 노선 배정. 예전에는 findMany의 중첩 relation이 하던 일이다.
-  const seasonalPassengers = seasonalEntries.length
-    ? await prisma.shuttleRoutePassenger.findMany({
+  // 이 조회·방학특강 확정 시각·정규 확정 시각(아래)은 서로 기다릴 필요가 없다 — 출발만 시키고 한꺼번에 기다린다(속도 8회차).
+  const seasonalPassengersP = seasonalEntries.length
+    ? prisma.shuttleRoutePassenger.findMany({
         where: {
           shuttleRequestId: { in: seasonalEntries.map((entry) => entry.shuttleRequestId) },
           routePlan: { status: { not: "ARCHIVED" } },
@@ -227,19 +235,11 @@ export async function getParentShuttleOverview(
           stop: { select: { name: true, address: true, roadAddress: true, plannedAt: true } },
         },
       })
-    : [];
+    : Promise.resolve([]);
   // 방학특강 확정 승/하차 시각(저장된 배차 노선 기준). 본인 자녀의 shuttleRequestId만 넘긴다(IDOR 안전).
-  const etaByRequest = seasonalEntries.length
-    ? await getConfirmedDispatchEtas(seasonalEntries.map((entry) => entry.shuttleRequestId))
-    : new Map<string, { pickupEtaLabel: string | null; dropoffEtaLabel: string | null }>();
-
-  const passengersByRequest = new Map<string, typeof seasonalPassengers>();
-  for (const passenger of seasonalPassengers) {
-    if (!passenger.shuttleRequestId) continue;
-    const list = passengersByRequest.get(passenger.shuttleRequestId) ?? [];
-    list.push(passenger);
-    passengersByRequest.set(passenger.shuttleRequestId, list);
-  }
+  const etaByRequestP = seasonalEntries.length
+    ? getConfirmedDispatchEtas(seasonalEntries.map((entry) => entry.shuttleRequestId))
+    : Promise.resolve(new Map<string, { pickupEtaLabel: string | null; dropoffEtaLabel: string | null }>());
 
   // 같은 routeKey의 과거 버전만 접는다. 날짜·방향·세션이 다른 실제 운행은 각각 남긴다.
   const regularByRoute = new Map<string, (typeof regularPassengers)[number]>();
@@ -262,10 +262,22 @@ export async function getParentShuttleOverview(
   const pairsByMonth = new Map<string, { studentId: string; dayOfWeek: string }[]>();
   for (const pair of regularEtaPairs) pairsByMonth.set(pair.serviceMonth, [...(pairsByMonth.get(pair.serviceMonth) ?? []), pair]);
   const regularEtaByKey = new Map<string, { pickupEtaLabel: string | null; dropoffEtaLabel: string | null }>();
-  await Promise.all([...pairsByMonth].map(async ([serviceMonth, pairs]) => {
-    const rows = await getConfirmedRegularRosterEtas(pairs, serviceMonth);
-    for (const [key, value] of rows) regularEtaByKey.set(key, value);
-  }));
+  const [seasonalPassengers, etaByRequest] = await Promise.all([
+    seasonalPassengersP,
+    etaByRequestP,
+    ...[...pairsByMonth].map(async ([serviceMonth, pairs]) => {
+      const rows = await getConfirmedRegularRosterEtas(pairs, serviceMonth);
+      for (const [key, value] of rows) regularEtaByKey.set(key, value);
+    }),
+  ]);
+
+  const passengersByRequest = new Map<string, typeof seasonalPassengers>();
+  for (const passenger of seasonalPassengers) {
+    if (!passenger.shuttleRequestId) continue;
+    const list = passengersByRequest.get(passenger.shuttleRequestId) ?? [];
+    list.push(passenger);
+    passengersByRequest.set(passenger.shuttleRequestId, list);
+  }
 
   const regularItems = regularRoutePassengers.map<ParentShuttleOverviewItem>((passenger) => {
     const isDraft = passenger.routePlan.status === "DRAFT";
