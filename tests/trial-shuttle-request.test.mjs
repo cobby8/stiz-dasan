@@ -582,6 +582,9 @@ function submitHarness({ lead = null, missingShuttleColumns = false, memoFails =
         "@/lib/enrollment-account-handoff": { issueEnrollmentAccountHandoff: async () => null },
         "@/lib/seasonal/contracts": { SHUTTLE_LOCATION_CONSENT_VERSION: "test" },
         "@/lib/enrollment/shuttle-place-name": { shuttlePlaceNameError: () => null },
+        // main 에 생긴 의존(2026-11-18) — 이 테스트의 관심사가 아니라 통과 대역
+        "@/lib/enrollment/shuttle-child-phone": { shuttleChildPhoneError: () => null },
+        "@/lib/seasonal/public-rate-limit": { takePublicRateLimit: () => ({ allowed: true }), hashSensitiveRateLimitKey: (value) => value },
         "@/lib/seats/seatLevel": { seatLevelFromCounts: () => "OPEN" },
         "@/lib/trial/trialShuttleRequest": realRulesCjs,
         "@/lib/trial/trialShuttleRequestStore": realStore,
