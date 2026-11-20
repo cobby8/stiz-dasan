@@ -92,7 +92,9 @@ test("선생님 화면 셔틀 탭: 기사님이 아니면 보기 전용(탑승 �
   // 학생 줄과 «체크 N/M» 요약이 같은 값을 본다 — 보기 전용은 서버 값 그대로
   assert.match(client, /const boarding = readOnly \? initialBoarding : boardingState;/);
   assert.match(client, /\{!readOnly && <details/);
-  assert.match(client, /if \(!readOnly\) return;\s*const timer = window\.setInterval\(\(\) => \{ if \(document\.visibilityState === "visible"\) router\.refresh\(\); \}, 30_000\);/);
+  // 보기 전용은 30초마다 새로 읽는다 — 2026-11-20 부터 운행 모드와 같은 장치(driverRunRefreshMode)를 쓴다. 규칙 자체는 driver-run-refresh 테스트가 실행해서 확인한다.
+  assert.match(client, /driverRunRefreshMode\(\{ readOnly, editing, savingOrder, running: runState === "running", gpsMode \}\)/);
+  assert.match(client, /if \(refreshMode !== "auto"\) return;[\s\S]{0,200}window\.setInterval\(tick, DRIVER_RUN_REFRESH_MS\)/);
 });
 
 // ── 2026-11-16 원장 지시: 일반 선생님에게 셔틀 탭을 연다(보기 + 선생님 운행) ──

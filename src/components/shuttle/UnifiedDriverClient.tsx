@@ -1,7 +1,7 @@
 "use client";
 
 import UiIcon from "@/components/common/UiIcon";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useBackToClose } from "@/components/common/useBackToClose";
@@ -21,6 +21,7 @@ import { readBoardingResult, saveAndVerifyBoarding } from "@/lib/shuttle/driverS
 import { boardAnywayConfirmText, boardedAnywayNote, riderBoardAnyway, riderBoardingView, riderDefaultStatus, riderLockLabel, stopAbsenceSummary, type UnifiedRider, type UnifiedRow } from "@/lib/shuttle/unifiedDriverRunLogic";
 import { userErrorMessage } from "@/components/staff/userErrorMessage";
 import { todayKst } from "@/lib/datetime/kst";
+import { DRIVER_RUN_PROBE_TIMEOUT_MS, DRIVER_RUN_PROBE_URL, DRIVER_RUN_REFRESH_MS, driverRunRefreshMode, mergeServerBoarding } from "@/lib/shuttle/driverRunRefresh";
 import type { RunHoliday } from "@/lib/shuttle/regularRunDayRules";
 
 // 기사님 통합 운행 화면 — 그날 방학특강·정규를 **가리지 않고 출발 시각 순서대로 한 줄씩** 나열한다.
@@ -63,11 +64,6 @@ export default function UnifiedDriverClient({
   readOnly?: boolean;
 }) {
   const router = useRouter();
-  useEffect(() => {
-    if (!readOnly) return;
-    const timer = window.setInterval(() => { if (document.visibilityState === "visible") router.refresh(); }, 30_000);
-    return () => window.clearInterval(timer);
-  }, [readOnly, router]);
   const accountRun = !token;
   const [boardingState, setBoarding] = useState<Record<string, Status>>(initialBoarding);
   // 화면이 읽는 값 — 보기 전용은 서버가 새로 읽어 준 값(30초마다 갱신)을 그대로 쓴다.
@@ -78,6 +74,20 @@ export default function UnifiedDriverClient({
   const locks = useRef(new Set<string>());
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  // 명단을 새로 읽으면(아래 «명단 새로 읽기») 서버가 탑승 기록도 새로 준다 — 이 화면에서 누른 줄은 그대로 두고 나머지만 서버 값을 따른다.
+  // (누른 줄 = saveStates 에 있는 줄·저장 요청이 나가 있는 줄. 저장이 아직 닿지 않은 체크를 서버의 옛 값이 덮어쓰지 않게)
+  const saveStatesRef = useRef(saveStates);
+  useEffect(() => { saveStatesRef.current = saveStates; }, [saveStates]);
+  // 체험 줄(T:) 기록은 서버에 없다고 지우지 않는다 — 체험 기록 읽기만 실패해도 서버는 «믿을 수 있음»으로 내려 주기 때문이다(다른 기기가 찍은 체험 체크가 잠깐 «대기»로 보이지 않게).
+  useEffect(() => {
+    if (readOnly || !initialBoardingReliable) return;
+    setBoarding((local) => mergeServerBoarding(local, initialBoarding, [...Object.keys(saveStatesRef.current), ...locks.current, ...Object.keys(local).filter((key) => key.startsWith("T:") && !(key in initialBoarding))]));
+  }, [initialBoarding, initialBoardingReliable, readOnly]);
+  // 한 번이라도 기록을 제대로 읽었으면, 뒤의 새로 읽기 한 번이 기록 읽기에 실패해도 체크 버튼을 잠그지 않는다(화면 값은 위에서 그대로 뒀다).
+  // 처음부터 못 읽은 화면만 예전처럼 «체크 기록을 불러오지 못했습니다»로 잠근다. 보기 전용은 서버 값을 그대로 보이므로 서버 판정을 그대로 쓴다.
+  const [everReliable, setEverReliable] = useState(initialBoardingReliable);
+  useEffect(() => { if (initialBoardingReliable) setEverReliable(true); }, [initialBoardingReliable]);
+  const boardingReliable = readOnly ? initialBoardingReliable : initialBoardingReliable || everReliable;
   const [menuKey, setMenuKey] = useState<string | null>(null);
   // 건강·알레르기·특이사항을 펼친 학생 줄(이름 옆 «특이»를 누르면 줄 아래에 글이 보인다)
   const [healthKey, setHealthKey] = useState<string | null>(null);
@@ -115,13 +125,58 @@ export default function UnifiedDriverClient({
   // 운행 중이 아니게 되면(앱이 먼저 종료 등) 열려 있던 종료 확인은 닫는다.
   useEffect(() => { if (runState !== "running") setConfirmEnd(false); }, [runState]);
 
+  // 명단 새로 읽기(2026-11-20) — 화면을 열어 둔 사이 추가된 학생(체험 셔틀·당일 변경)이 보이게 한다.
+  // 30초마다 + 화면으로 돌아올 때. 순서 편집·저장 중에는 읽지 않고, 웹 위치 공유로 운행 중이면 버튼으로만 읽는다(이유는 driverRunRefreshMode).
+  // 읽기 전에 연결부터 확인한다 — 서버 응답을 못 받으면 브라우저가 페이지를 통째로 다시 열어 화면이 오류 페이지로 바뀔 수 있다.
+  const refreshMode = driverRunRefreshMode({ readOnly, editing, savingOrder, running: runState === "running", gpsMode });
+  const refreshModeRef = useRef(refreshMode);
+  useEffect(() => { refreshModeRef.current = refreshMode; }, [refreshMode]);
+  const refreshing = useRef(false);
+  const [refreshNote, setRefreshNote] = useState<string | null>(null);
+  const refreshRoster = useCallback(async (manual: boolean) => {
+    if (refreshing.current || document.visibilityState !== "visible") return;
+    refreshing.current = true;
+    if (manual) setRefreshNote("명단을 새로 읽는 중…");
+    try {
+      const controller = new AbortController();
+      const timer = window.setTimeout(() => controller.abort(), DRIVER_RUN_PROBE_TIMEOUT_MS);
+      let online = false;
+      try {
+        online = (await fetch(DRIVER_RUN_PROBE_URL, { method: "HEAD", cache: "no-store", signal: controller.signal })).ok;
+      } catch { online = false; } finally { window.clearTimeout(timer); }
+      if (!mounted.current) return;
+      // 연결을 확인하는 사이 순서 편집을 시작했으면 읽지 않는다. 자동 읽기는 그 사이 «운행 중(웹)»이 됐어도 멈춘다.
+      const mode = refreshModeRef.current;
+      if (mode === "none" || (!manual && mode !== "auto")) { if (manual) setRefreshNote(null); return; }
+      if (!online) { if (manual) setRefreshNote("연결이 약해 새로 읽지 못했습니다. 잠시 뒤 다시 눌러 주세요."); return; }
+      router.refresh();
+      if (manual) setRefreshNote("새 명단을 요청했습니다. 곧 반영됩니다.");
+    } finally {
+      refreshing.current = false;
+    }
+  }, [router]);
+  useEffect(() => {
+    if (refreshMode !== "auto") return;
+    const tick = () => { void refreshRoster(false); };
+    const timer = window.setInterval(tick, DRIVER_RUN_REFRESH_MS);
+    document.addEventListener("visibilitychange", tick);
+    window.addEventListener("focus", tick);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", tick);
+      window.removeEventListener("focus", tick);
+    };
+  }, [refreshMode, refreshRoster]);
+  // 버튼 안내 글은 «버튼으로만 읽는» 동안에만 뜻이 있다 — 그 밖으로 나가면 지운다.
+  useEffect(() => { if (refreshMode !== "manual") setRefreshNote(null); }, [refreshMode]);
+
   // 날이 바뀐 화면(2026-11-13 b2) — 어제 열어 둔 운행표를 오늘 다시 보면 어제 명단이 그대로 보였다.
   // 화면으로 돌아올 때 오늘(KST)이 화면의 «오늘»과 다르면 새로 불러온다.
   // 단, 운행 중(위치 전송)이거나 순서 편집 중이면 건드리지 않는다 — 새로 불러오면 위치 전송·편집이 끊길 수 있다.
   useEffect(() => {
     const refreshIfNewDay = () => {
       if (document.visibilityState !== "visible" || runState === "running" || editing) return;
-      if (todayKst() !== today) router.refresh();
+      if (todayKst() !== today) void refreshRoster(false); // 연결 확인을 거친다(끊긴 채 새로 읽으면 화면이 오류 페이지로 바뀐다)
     };
     document.addEventListener("visibilitychange", refreshIfNewDay);
     window.addEventListener("focus", refreshIfNewDay);
@@ -129,7 +184,7 @@ export default function UnifiedDriverClient({
       document.removeEventListener("visibilitychange", refreshIfNewDay);
       window.removeEventListener("focus", refreshIfNewDay);
     };
-  }, [today, runState, editing, router]);
+  }, [today, runState, editing, refreshRoster]);
 
   // 화면에 그릴 순서 = 서버가 준 시각순 + (편집했다면) 바뀐 정렬키.
   const ordered = useMemo(() => {
@@ -256,7 +311,7 @@ export default function UnifiedDriverClient({
   async function setStatus(rider: UnifiedRider, next: Status | null, verifyOnly = false, boardAnyway = false) {
     const key = rider.key;
     // 로그인 운행표(계정)는 정규·체험 줄만 체크한다(특강 줄은 운행 링크 화면에서)
-    if ((accountRun && rider.kind === "SEASONAL") || !initialBoardingReliable || locks.current.has(key) || (!verifyOnly && saveStates[key]?.state === "unknown")) return;
+    if ((accountRun && rider.kind === "SEASONAL") || !boardingReliable || locks.current.has(key) || (!verifyOnly && saveStates[key]?.state === "unknown")) return;
     const cur = boarding[key] ?? null;
     // 게슈탈트 T-04: 이미 그 상태인 버튼을 다시 눌러도 아무 일 없게(운전 중 두 번 눌림으로 체크가 풀리던 문제).
     // 되돌리기는 아래 별도 «대기로 되돌리기» 글자 버튼만 한다.
@@ -305,7 +360,7 @@ export default function UnifiedDriverClient({
     const targets = [...new Map(riders.map((rider) => [rider.key, rider])).values()].filter((rider) => !riderBoardingView(rider, boarding[rider.key]).blocked);
     const checked = targets.filter((rider) => {
       const state = saveStates[rider.key]?.state;
-      return initialBoardingReliable && (!state || state === "saved") && riderBoardingView(rider, boarding[rider.key]).status != null;
+      return boardingReliable && (!state || state === "saved") && riderBoardingView(rider, boarding[rider.key]).status != null;
     }).length;
     return { total: targets.length, checked };
   }
@@ -333,7 +388,7 @@ export default function UnifiedDriverClient({
     const absence = stopAbsenceSummary(row.riders, boarding);
     return (
       <>
-        <span>{initialBoardingReliable ? checks.total > 0 ? `체크 ${checks.checked}/${checks.total}${checks.checked === checks.total ? " · 체크 완료" : ""}` : "체크 대상 없음" : "기록 확인 필요"}</span>
+        <span>{boardingReliable ? checks.total > 0 ? `체크 ${checks.checked}/${checks.total}${checks.checked === checks.total ? " · 체크 완료" : ""}` : "체크 대상 없음" : "기록 확인 필요"}</span>
         {absence.absentCount > 0 && <span className="font-semibold text-[var(--color-academy-danger)]">결석 {absence.absentCount}명{absence.allSkippable ? " · 정차 안 해도 됨" : ""}</span>}
         {/* 결석 없이 전원이 잠긴 줄(휴원·휴무 등)이면 같은 안내만 회색으로 */}
         {absence.absentCount === 0 && absence.allSkippable && <span className="font-semibold text-[var(--color-academy-muted)]">정차 안 해도 됨</span>}
@@ -349,7 +404,7 @@ export default function UnifiedDriverClient({
     const status = stored ?? riderDefaultStatus(rider);
     const parent = digits(rider.parentPhone), child = digits(rider.studentPhone);
     const saveState = saveStates[rider.key];
-    const isBusy = busy[rider.key] || !initialBoardingReliable || saveState?.state === "unknown";
+    const isBusy = busy[rider.key] || !boardingReliable || saveState?.state === "unknown";
     const selfLabel = isPickup ? "자차등원" : "자차하원";
     // 원장 지시(2026-11-09): 정규 결석 신고 학생은 명단에서 빼지 않는다 — 순서 그대로, «결석» 뱃지 + 흐린 행.
     // 탑승 버튼은 그대로 누를 수 있고(실제로 탔으면 체크), 기록이 없으면 기본 «결석»으로 보인다.
@@ -532,13 +587,19 @@ export default function UnifiedDriverClient({
           {date === today ? "오늘은" : "이날은"} 휴무 ({holiday.title}) <span className="text-sm font-medium text-[var(--color-academy-muted)]">· 정규 셔틀 체크 없음</span>
         </p>
       )}
-      {!initialBoardingReliable && <p role="alert" className="mb-2 text-sm font-semibold text-[var(--color-academy-danger)]">체크 기록을 불러오지 못했습니다. 미체크로 판단하지 말고 <button type="button" className="inline-flex min-h-11 min-w-11 items-center underline" onClick={() => window.location.reload()}>기록 다시 불러오기</button>를 눌러주세요. 확인 전에는 체크를 잠시 막습니다.</p>}
+      {!boardingReliable && <p role="alert" className="mb-2 text-sm font-semibold text-[var(--color-academy-danger)]">체크 기록을 불러오지 못했습니다. 미체크로 판단하지 말고 <button type="button" className="inline-flex min-h-11 min-w-11 items-center underline" onClick={() => { if (refreshMode === "manual") void refreshRoster(true); else window.location.reload(); }}>기록 다시 불러오기</button>를 눌러주세요. 확인 전에는 체크를 잠시 막습니다.</p>}
 
       {/* 순서 편집 */}
       {stopRows.length > 0 && (
         <div className="mb-2 flex items-center justify-between gap-2">
-          <p className={styles.runSummary}>운행 순서 · {stopRows.length}곳 <span>{initialBoardingReliable ? summary.total > 0 ? `체크 ${summary.checked}/${summary.total}` : "체크 대상 없음" : "기록 확인 필요"}</span>{upcoming.clockLabel && <span>{upcoming.isViewingToday ? `현재 ${upcoming.clockLabel} · 예정 시각 기준` : "선택한 날짜의 운행"}</span>}</p>
+          <p className={styles.runSummary}>운행 순서 · {stopRows.length}곳 <span>{boardingReliable ? summary.total > 0 ? `체크 ${summary.checked}/${summary.total}` : "체크 대상 없음" : "기록 확인 필요"}</span>{upcoming.clockLabel && <span>{upcoming.isViewingToday ? `현재 ${upcoming.clockLabel} · 예정 시각 기준` : "선택한 날짜의 운행"}</span>}</p>
           {orderControls}
+        </div>
+      )}
+      {refreshMode === "manual" && (
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-x-3 rounded-xl bg-[var(--color-academy-info-soft)] px-3 py-1 text-sm text-[var(--color-academy-info)]">
+          <p aria-live="polite">{refreshNote ?? "운행 중에는 명단을 자동으로 새로 읽지 않습니다."}</p>
+          <button type="button" onClick={() => { void refreshRoster(true); }} className="inline-flex min-h-11 items-center font-medium underline underline-offset-4">명단 새로 읽기</button>
         </div>
       )}
       {editing && <p className="mb-2 rounded-xl bg-[var(--color-academy-info-soft)] px-3 py-2 text-sm text-[var(--color-academy-info)]">순서를 바꾸면 첫 탑승(하원은 학원 출발) 시각은 그대로 두고 뒤 정류장 시각을 지도 이동 시간으로 다시 계산합니다. 시간을 직접 수정할 수도 있습니다. 정규 셔틀만 저장됩니다.</p>}
