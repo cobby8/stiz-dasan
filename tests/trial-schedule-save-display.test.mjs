@@ -54,6 +54,10 @@ function saveHarness(initial = {}) {
         requireAdmin: async () => ({ appUserId: "fixture-admin" }),
         ensureTrialLeadTable: async () => {},
         revalidatePath: () => {}, revalidateTrialAdminCaches: () => {},
+        // 체험 셔틀 배정 풀기(2026-11-19) — 이 테스트의 관심사(일정 저장·표시)가 아니라 «풀 일 없음»으로 둔다.
+        // 판단 규칙·호출 자리는 tests/trial-shuttle-request.test.mjs 가 지킨다
+        trialShuttleReleaseReasonForLeadUpdate: () => null,
+        releaseTrialShuttleSafely: async () => true,
         resolveCanonicalTrialSchedule: async (input) => time.resolveTrialScheduleFromRow({
             overrideStart: null, overrideHidden: false, scheduleStart: null, scheduleDay: null,
             scheduleHidden: false, scheduleActiveFrom: null, scheduleActiveTo: null,

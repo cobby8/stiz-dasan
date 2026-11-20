@@ -378,7 +378,8 @@ test("화면: 정규 배차 화면에 패널이 걸려 있고, 입력은 버튼 
   const page = read("src/app/admin/shuttle/regular-dispatch/page.tsx");
   assert.match(page, /await requireAdmin\(\);/, "화면도 관리자 확인");
   // 패널은 여전히 이 화면에 걸려 있다 — 운행표 부품의 머리줄 자리(headerExtra)로 넘긴다
-  assert.match(page, /headerExtra=\{<ShuttleDayExceptionAdminPanel initial=\{/);
+  // 2026-11-19: 같은 자리에 «체험 셔틀 배정 대기 N건» 링크가 옆에 붙어 묶음(<>…</>)이 됐다
+  assert.match(page, /headerExtra=\{\s*<>\s*<ShuttleDayExceptionAdminPanel initial=\{/);
   assert.match(page, /getShuttleExceptionBoardForAdmin\(\)\.catch\(/, "조회가 실패해도 운행표는 뜬다");
   const ui = read("src/app/admin/shuttle/regular-dispatch/ShuttleDayExceptionAdminPanel.tsx");
   assert.match(ui, /<button type="button" onClick=\{openForm\} className="academy-button-secondary shrink-0">\s*당일 변경 입력\s*<\/button>/);

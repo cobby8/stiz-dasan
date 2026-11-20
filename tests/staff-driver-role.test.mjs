@@ -113,7 +113,9 @@ test("일반 선생님 셔틀 탭: 보기에는 연락처·건강 정보가 내�
 
   const page = staffShuttleSource;
   assert.match(page, /const \{ canOpen, teacherOnly \} = staffShuttleAccess\(staff\.roles\);\s*if \(!canOpen\) redirect\("\/staff"\);/);
-  assert.match(page, /rows=\{teacherOnly && !driveMode \? stripRiderPrivate\(buildUnifiedRun\(\{ regular: classes \}\)\) : buildUnifiedRun\(\{ regular: classes \}\)\}/);
+  // 2026-11-19: 운행표에 체험 셔틀 줄이 끼워져(runRows) 같은 가림 함수를 거친다 — 체험 줄 연락처도 «보기»에는 내려가지 않는다
+  assert.match(page, /const runRows = buildUnifiedRun\(\{ regular: classes, trial: trialRides \}\);/);
+  assert.match(page, /rows=\{teacherOnly && !driveMode \? stripRiderPrivate\(runRows\) : runRows\}/);
   assert.match(page, /if \(params\.view === "routes" && !teacherOnly\)/);
   // 2026-11-18: «운행 시작» 버튼은 표시(?start=1)를 달고 기사님 첫 화면으로 간다(DRIVER_START_HREF)
   assert.match(page, /\{!teacherOnly && \(\s*<Link href=\{DRIVER_START_HREF\}/);

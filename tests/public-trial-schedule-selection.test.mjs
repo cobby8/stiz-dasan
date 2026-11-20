@@ -7,6 +7,10 @@ import ts from "typescript";
 import * as kst from "../src/lib/datetime/kst.ts";
 import * as publicErrorText from "../src/components/ui/public-error-text.ts";
 import * as seatLevel from "../src/lib/seats/seatLevel.ts";
+import { loadTsModule } from "./_ts-module.mjs";
+
+// 체험 셔틀 요청 규칙(2026-11-19) — 신청서가 쓰는 검사를 실제 모듈로 돌린다
+const trialShuttleRequest = await loadTsModule("src/lib/trial/trialShuttleRequest.ts");
 
 const require = createRequire(import.meta.url);
 function compile(file, dependencies) {
@@ -55,6 +59,9 @@ function harness(t, { initialStep = 1, form = {}, availableSlots = slots, existi
     // 체험 안내(위치·준비물·확정 조건) 표시 부품 — 일정 검증과 무관해 빈 부품으로(2026-11-10 체험비 온라인 결제)
     "./TrialVisitGuide": { default: () => null },
     "@/components/ui/FontFreeIcon": { default: () => null },
+    // 셔틀 입력 부품(지도 창 포함)은 일정 검증과 무관해 빈 부품으로 — 검사 규칙은 실제 모듈
+    "@/components/trial/TrialShuttleRequestFields": { default: () => null },
+    "@/lib/trial/trialShuttleRequest": trialShuttleRequest,
     "@/components/MetaPixel": { trackMetaEvent() {} },
     "next/link": { default: ({ children }) => React.createElement("span", null, children) },
     "@/app/actions/public": {
@@ -198,4 +205,52 @@ test("기존 일정 복귀·동일 오류 재시도·통신 오류는 렌더 후
   assert.equal(failing.states[0], 2);
   assert.equal(failing.scrolls.length, 1);
   assert.equal(failing.states[1].trialDate, "2026-10-24");
+});
+
+// 훅 순서: 0=step 1=form 2=error … 10=shuttle 11=shuttleErrors (새 상태는 맨 뒤)
+const SHUTTLE_STATE = 10;
+const SHUTTLE_ERRORS_STATE = 11;
+const shuttlePlace = { name: "합성아파트 후문", address: "경기 남양주시 합성로 49", latitude: 37.61, longitude: 127.15 };
+
+test("셔틀 «필요»인데 위치나 위치명이 비면 2단계에서 못 넘어가고 그 칸 안내가 생긴다", async (t) => {
+  const noLocation = harness(t, { initialStep: 2 });
+  noLocation.states[SHUTTLE_STATE] = { needed: true, direction: "BOTH", pickup: null, dropoffDifferent: false, dropoff: null };
+  await noLocation.button("다음").props.onClick();
+  assert.equal(noLocation.states[0], 2);
+  assert.match(noLocation.states[SHUTTLE_ERRORS_STATE].pickupLocation, /지도에서/);
+  assert.equal(noLocation.submissions.length, 0);
+
+  const noName = harness(t, { initialStep: 2 });
+  noName.states[SHUTTLE_STATE] = { needed: true, direction: "PICKUP", pickup: { ...shuttlePlace, name: " " }, dropoffDifferent: false, dropoff: null };
+  await noName.button("다음").props.onClick();
+  assert.equal(noName.states[0], 2);
+  assert.match(noName.states[SHUTTLE_ERRORS_STATE].pickupName, /타는 곳 이름/);
+
+  // 마지막 제출 직전에도 다시 본다 — 문제가 있으면 셔틀 칸이 있는 2단계로
+  const atSubmit = harness(t, { initialStep: 3 });
+  atSubmit.states[SHUTTLE_STATE] = { needed: true, direction: "BOTH", pickup: null, dropoffDifferent: false, dropoff: null };
+  atSubmit.button("신청").props.onClick();
+  await atSubmit.settle();
+  assert.equal(atSubmit.states[0], 2);
+  assert.equal(atSubmit.submissions.length, 0);
+});
+
+test("셔틀 «필요 없음»(기본)은 예전 전송 모양 그대로, «필요»는 요청을 함께 보낸다", async (t) => {
+  const none = harness(t, { initialStep: 2 });
+  await none.button("다음").props.onClick();
+  assert.equal(none.states[0], 3);
+  assert.deepEqual(none.states[SHUTTLE_STATE], { needed: false, direction: "BOTH", pickup: null, dropoffDifferent: false, dropoff: null });
+  none.button("신청").props.onClick();
+  await none.settle();
+  assert.equal("shuttle" in none.submissions[0], false);
+
+  const needed = harness(t, { initialStep: 2 });
+  const request = { needed: true, direction: "DROPOFF", pickup: shuttlePlace, dropoffDifferent: false, dropoff: null };
+  needed.states[SHUTTLE_STATE] = request;
+  await needed.button("다음").props.onClick();
+  assert.equal(needed.states[0], 3);
+  assert.deepEqual(needed.states[SHUTTLE_ERRORS_STATE], {});
+  needed.button("신청").props.onClick();
+  await needed.settle();
+  assert.deepEqual(needed.submissions[0].shuttle, request);
 });

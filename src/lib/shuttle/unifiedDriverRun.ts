@@ -12,6 +12,8 @@ import {
 import type { DriverClass } from "./regularDriverRouteLogic";
 import { notMergedStudent } from "@/lib/studentVisibility";
 import { addDaysKst, todayKst } from "@/lib/datetime/kst";
+// 체험 셔틀 하루 탑승(2026-11-19) — 그날 정규 운행 묶음 안에 끼워 보여 준다. 실패하면 빈 목록(운행표는 그대로)
+import { loadTrialRidesForDate } from "./trialShuttle";
 
 /**
  * 운행표에 «이미 올라온» 학생의 건강·알레르기·특이사항 표시를 줄에 붙인다(2026-11-14 원장 결정 b5 · 보안 검수 반영).
@@ -23,7 +25,11 @@ import { addDaysKst, todayKst } from "@/lib/datetime/kst";
 async function attachRiderHealthNotes(rows: UnifiedRow[], withText: boolean): Promise<void> {
   const regularIds = new Set<string>();
   const seasonalIds = new Set<string>();
-  for (const row of rows) for (const rider of row.riders) (rider.kind === "REGULAR" ? regularIds : seasonalIds).add(rider.checkId);
+  // 체험 줄(TRIAL)은 등록 전 학생이라 건강 칸이 없다 — 되짚지 않는다
+  for (const row of rows) for (const rider of row.riders) {
+    if (rider.kind === "TRIAL") continue;
+    (rider.kind === "REGULAR" ? regularIds : seasonalIds).add(rider.checkId);
+  }
   if (regularIds.size + seasonalIds.size === 0) return;
   // 글 전문은 허용된 경로에서만 SELECT 한다 — 그 밖에는 빈 글자를 골라 «있다/없다»만 안다
   const textColumn = withText ? `s."healthNote"` : `''::text`;
@@ -49,6 +55,7 @@ async function attachRiderHealthNotes(rows: UnifiedRow[], withText: boolean): Pr
   ]);
   if (notes.size === 0) return;
   for (const row of rows) for (const rider of row.riders) {
+    if (rider.kind === "TRIAL") continue;
     const note = notes.get(`${rider.kind === "REGULAR" ? "R" : "S"}:${rider.checkId}`);
     if (note === undefined) continue;
     rider.hasHealthNote = true;
@@ -69,6 +76,7 @@ export function healthTextDateAllowed(viewDate: string, today: string): boolean 
  * ⚠️ 탑승 체크의 저장·조회 경로는 종류별로 그대로 둔다.
  *    · 특강: ShuttleBoarding(direction='PICKUP'|'DROPOFF', shuttleRequestId)
  *    · 정규: ShuttleBoarding(direction='REGULAR', shuttleRequestId=명단 정차행 id)
+ *    · 체험: ShuttleBoarding(direction='TRIAL', shuttleRequestId=하루 탑승 TrialShuttleRide.id)
  *    화면 상태만 접두사 키(S:/R:)로 합쳐 쓰고, 저장할 땐 각자 원래 API·원래 키로 되돌린다.
  *
  * ⚠️ PgBouncer 트랜잭션 모드 → 하위 조회는 전부 $queryRawUnsafe 를 쓰는 기존 함수만 호출한다.
@@ -164,11 +172,14 @@ export function mergeBoardingMaps(input: {
   pickup: Record<string, BoardingStatus>;
   dropoff: Record<string, BoardingStatus>;
   regular: Record<string, BoardingStatus>;
+  /** 체험 셔틀(없으면 생략) */
+  trial?: Record<string, BoardingStatus>;
 }): Record<string, BoardingStatus> {
   const out: Record<string, BoardingStatus> = {};
   for (const [id, st] of Object.entries(input.pickup)) out[`S:PICKUP:${id}`] = st;
   for (const [id, st] of Object.entries(input.dropoff)) out[`S:DROPOFF:${id}`] = st;
   for (const [id, st] of Object.entries(input.regular)) out[`R:${id}`] = st;
+  for (const [id, st] of Object.entries(input.trial ?? {})) out[`T:${id}`] = st;
   return out;
 }
 
@@ -196,9 +207,11 @@ export async function loadUnifiedDriverRun(viewDate: string, options: { withHeal
     }
   };
 
-  const [sections, regular] = await Promise.all([
+  // 체험 셔틀은 스스로 실패를 삼킨다(빈 목록) — 동시 조회는 셋까지
+  const [sections, regular, trialRides] = await Promise.all([
     loadSeasonalSections(viewDate),
     regularSafe(),
+    loadTrialRidesForDate(viewDate),
   ]);
 
   const reads = await Promise.allSettled([
@@ -208,18 +221,23 @@ export async function loadUnifiedDriverRun(viewDate: string, options: { withHeal
   ]);
   const boardingReliable = reads.every((read) => read.status === "fulfilled");
   const [pickup, dropoff, regularBoarding] = reads.map((read) => read.status === "fulfilled" ? read.value.boarding : {});
+  // 체험 줄이 있는 날만 체험 탑승 기록을 읽는다(평소에는 조회를 아낀다). 못 읽으면 체험 줄만 «기록 확인 필요»가 아니라 빈 기록으로 둔다
+  //  — 정규·특강 체크를 통째로 막지 않게(boardingReliable 은 기존 세 조회만 본다).
+  const trialBoarding = trialRides.length > 0
+    ? await readDriverBoarding(viewDate, "TRIAL").then((read) => read.boarding).catch(() => ({}))
+    : {};
 
   // 이름표는 종전 화면 규칙 그대로: 특강 차량명 → 없으면 정규 명단 유무에 따라 기본 문구.
   const driverLabel = sections[0]?.vehicles?.[0]?.vehicleName
     ?? (regular.classes.length > 0 ? "정규 셔틀 기사님" : "방학특강 기사님");
 
-  const rows = buildUnifiedRun({ seasonal: sections, regular: regular.classes });
+  const rows = buildUnifiedRun({ seasonal: sections, regular: regular.classes, trial: trialRides });
   // 건강 글 전문 = 로그인 경로(withHealthText) + 오늘 ±1일. 그 밖에는 «특이» 표시만
   await attachRiderHealthNotes(rows, options.withHealthText === true && healthTextDateAllowed(viewDate, todayKst()));
 
   return {
     rows,
-    boarding: mergeBoardingMaps({ pickup, dropoff, regular: regularBoarding }),
+    boarding: mergeBoardingMaps({ pickup, dropoff, regular: regularBoarding, trial: trialBoarding }),
     boardingReliable,
     driverLabel,
     holiday: regular.holiday,

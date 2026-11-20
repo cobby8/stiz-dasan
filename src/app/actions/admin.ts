@@ -1,6 +1,14 @@
 "use server";
 
 import { commencementYmd, requireCommencement } from "@/lib/enrollment/commencement";
+// 체험 셔틀 요청(2026-11-19) — 검사 규칙·저장 SQL·배정 풀기 호출은 각각 한 곳
+import {
+    normalizeTrialShuttleRequest,
+    trialShuttleReleaseReasonForLeadUpdate,
+    trialShuttleRequestSame,
+    type TrialShuttleRequestColumns,
+} from "@/lib/trial/trialShuttleRequest";
+import { readTrialShuttleRequest, releaseTrialShuttleSafely, writeTrialShuttleRequest } from "@/lib/trial/trialShuttleRequestStore";
 import { sendEnrollGuideIfEnabled } from "@/lib/trial-fee/guideSender";
 import { childAccessWhere } from "@/lib/account/child-access";
 // 랠리즈 피드 이관 수업은 발행해도 학부모 알림 없음(선생님 발행 경로와 같은 판정)
@@ -4344,6 +4352,29 @@ export async function ensureTrialLeadTable() {
                 );
             } catch (_) { /* 이미 존재하면 무시 */ }
         }
+        // 체험 셔틀 요청 칸(2026-11-19) — 마이그레이션(20261119100000_trial_shuttle)과 같은 이름·타입이라 어느 쪽이 먼저 돌아도 같다.
+        // 배포가 마이그레이션보다 먼저 나가도 셔틀 요청을 받을 수 있게 여기서도 보장한다(왕복 한 번으로 끝나게 한 문장).
+        // 값 범위(CHECK)·색인은 마이그레이션이 만든다.
+        try {
+            await prisma.$executeRawUnsafe(
+                `ALTER TABLE "TrialLead"
+                    ADD COLUMN IF NOT EXISTS "shuttleNeeded" BOOLEAN NOT NULL DEFAULT false,
+                    ADD COLUMN IF NOT EXISTS "shuttleDirection" TEXT,
+                    ADD COLUMN IF NOT EXISTS "shuttlePickupName" TEXT,
+                    ADD COLUMN IF NOT EXISTS "shuttlePickupAddress" TEXT,
+                    ADD COLUMN IF NOT EXISTS "shuttlePickupLat" DOUBLE PRECISION,
+                    ADD COLUMN IF NOT EXISTS "shuttlePickupLng" DOUBLE PRECISION,
+                    ADD COLUMN IF NOT EXISTS "shuttleDropoffName" TEXT,
+                    ADD COLUMN IF NOT EXISTS "shuttleDropoffAddress" TEXT,
+                    ADD COLUMN IF NOT EXISTS "shuttleDropoffLat" DOUBLE PRECISION,
+                    ADD COLUMN IF NOT EXISTS "shuttleDropoffLng" DOUBLE PRECISION,
+                    ADD COLUMN IF NOT EXISTS "shuttleStatus" TEXT NOT NULL DEFAULT 'NONE',
+                    ADD COLUMN IF NOT EXISTS "shuttleRequestedAt" TIMESTAMPTZ(6),
+                    ADD COLUMN IF NOT EXISTS "shuttleAdminNote" TEXT`
+            );
+        } catch (shuttleDdlError) {
+            console.warn("[DDL] TrialLead shuttle columns ensure failed:", (shuttleDdlError as Error).message);
+        }
     } catch (e) {
         console.warn("[DDL] TrialLead table ensure failed:", (e as Error).message);
     }
@@ -4526,6 +4557,17 @@ export async function updateTrialLead(
         errors: [],
     };
 
+    // 체험 셔틀: 확정 날짜·반이 실제로 바뀌거나 취소·이탈로 가면 이미 된 배정을 푼다(아래 본 저장 뒤에 호출).
+    // 풀기가 실패해도 저장은 막지 않고, 화면이 알릴 수 있게 결과에 실어 보낸다.
+    const shuttleReleaseReason = trialShuttleReleaseReasonForLeadUpdate(
+        {
+            scheduledDate: previousLead.scheduledDate ?? previousLead.scheduleddate ?? null,
+            scheduledClassId: previousLead.scheduledClassId ?? previousLead.scheduledclassid ?? null,
+        },
+        { status: data.status, scheduledDate: data.scheduledDate, scheduledClassId: data.scheduledClassId },
+    );
+    let shuttleReleaseFailed = false;
+
     // 동적 SET절: 컬럼명은 화이트리스트에서만 허용 → SQL 인젝션 불가능, 값은 $N 바인딩
     const setClauses = entries.map(([col], i) => {
         // 날짜 타입 필드는 ::timestamptz 캐스팅
@@ -4558,6 +4600,11 @@ export async function updateTrialLead(
             } catch (resetError) {
                 console.warn("[updateTrialLead] 체험 출결 초기화 실패:", (resetError as Error).message);
             }
+        }
+
+        // 일정 변경·취소·이탈 → 체험 셔틀 배정 풀기(배정이 없으면 그쪽 함수가 아무 일도 하지 않는다)
+        if (shuttleReleaseReason) {
+            shuttleReleaseFailed = !(await releaseTrialShuttleSafely(id, shuttleReleaseReason));
         }
 
         if (history?.action) {
@@ -4701,7 +4748,85 @@ export async function updateTrialLead(
     return {
         attendedSms: attendedSmsResult,
         scheduledSms: scheduledSmsResult,
+        // true = 저장은 됐지만 체험 셔틀 배정을 풀지 못했다(화면이 «셔틀 배정을 확인해 주세요»라고 알린다)
+        shuttleReleaseFailed,
     };
+}
+
+/**
+ * 체험 셔틀 요청 넣기·고치기·«필요 없음»으로 바꾸기 (관리자 체험 상세 · 2026-11-19).
+ *
+ * 전화로 받았거나 신청 뒤에 생긴 요청을 관리자가 직접 넣는다(예: 메모에 «셔틀 필요 도농로 49»만 적혀 있던 체험 학생).
+ * - 공용 수정(updateTrialLead)에 섞지 않는다: 여기서만 값 검사(방향·좌표·위치명)와 상태 규칙을 지킨다.
+ * - 이 액션은 상태를 NONE ↔ REQUESTED 로만 만든다(ASSIGNED·UNAVAILABLE 은 셔틀 배정 쪽).
+ * - 내용이 실제로 바뀌면 이미 된 배정을 풀고 다시 «대기(REQUESTED)»로 둔다. 같은 내용이면 아무것도 하지 않는다.
+ */
+export async function updateTrialLeadShuttleRequest(
+    id: string,
+    input: unknown,
+): Promise<{ ok: true; changed: boolean; releaseFailed: boolean } | { ok: false; error: string }> {
+    const admin = await requireAdmin();
+    await ensureTrialLeadTable();
+
+    const normalized = normalizeTrialShuttleRequest(input);
+    if (!normalized.ok) return { ok: false, error: normalized.message };
+    const next = normalized.columns;
+
+    // 칸이 아직 없는 DB(마이그레이션 전)에서는 이 조회가 실패한다 → 쉬운 말로 알린다
+    let previous: TrialShuttleRequestColumns | null;
+    try {
+        previous = await readTrialShuttleRequest(prisma, id);
+    } catch (e) {
+        console.error("[updateTrialLeadShuttleRequest] 조회 실패:", e);
+        return { ok: false, error: "셔틀 요청을 저장할 준비가 아직 안 됐습니다. 잠시 후 다시 시도해 주세요." };
+    }
+    if (!previous) return { ok: false, error: "체험 신청을 찾지 못했습니다. 목록을 새로고침해 주세요." };
+
+    if (trialShuttleRequestSame(previous, next)) return { ok: true, changed: false, releaseFailed: false };
+
+    // 배정 풀기를 먼저, 요청 칸 쓰기를 나중에 — 마지막에 남는 상태가 이 액션의 값(REQUESTED/NONE)이 되게
+    let releaseFailed = false;
+    if (previous.shuttleNeeded) {
+        // 내용 변경·요청 취소 모두 같은 이유(REQUEST_CHANGED)
+        releaseFailed = !(await releaseTrialShuttleSafely(id, "REQUEST_CHANGED"));
+    }
+    // 쓰기는 «배정됨이 아닐 때만»(NOT_ASSIGNED) — 풀기와 쓰기 사이에 다른 관리자가 다시 배정했거나 풀기가 실패했으면
+    // 살아 있는 탑승 줄을 둔 채 상태만 «대기»로 덮어쓰게 된다. 그때는 0줄이 되어 저장하지 않고 알린다.
+    let written: number;
+    try {
+        written = await writeTrialShuttleRequest(prisma, id, next, "NOT_ASSIGNED");
+    } catch (e) {
+        console.error("[updateTrialLeadShuttleRequest] 저장 실패:", e);
+        return { ok: false, error: "셔틀 요청을 저장하지 못했습니다. 잠시 후 다시 시도해 주세요." };
+    }
+    if (written === 0) {
+        return {
+            ok: false,
+            error: releaseFailed
+                ? "셔틀 배정을 풀지 못해 요청을 고치지 못했습니다. 잠시 후 다시 시도해 주세요."
+                : "다른 화면에서 셔틀 배정이 바뀌었습니다. 새로고침한 뒤 다시 시도해 주세요.",
+        };
+    }
+
+    // 이력은 본 저장과 따로(실패해도 저장은 유지)
+    try {
+        await recordApplicationHistoryLog({
+            targetType: "TRIAL",
+            targetId: id,
+            action: "UPDATED",
+            note: next.shuttleNeeded
+                ? (previous.shuttleNeeded ? "셔틀 요청 내용을 고쳤습니다." : "셔틀 요청을 넣었습니다.")
+                : "셔틀을 «필요 없음»으로 바꿨습니다.",
+            admin,
+        });
+    } catch (historyError) {
+        console.warn("[updateTrialLeadShuttleRequest] 이력 저장 실패:", (historyError as Error).message);
+    }
+
+    revalidatePath("/admin/trial");
+    revalidatePath("/admin/apply");
+    revalidateTrialAdminCaches();
+    return { ok: true, changed: true, releaseFailed };
 }
 
 // (2026-11-09) 체험 완료 문자 재시도 액션 resendTrialAttendedSms 는 문자 자체를 없애며 함께 지웠다.

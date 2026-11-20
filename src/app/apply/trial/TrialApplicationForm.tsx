@@ -14,6 +14,9 @@ import { isKstYmd, todayKst } from "@/lib/datetime/kst";
 import { SEAT_LEVEL_LABEL, SEAT_LEVEL_TEXT_CLASS } from "@/lib/seats/seatLevel";
 import { trialDayForDate, trialScheduleError, trialScheduleForDate, trialSlotPeriod as getSlotPeriod, type TrialScheduleSelection } from "./trialScheduleSelection";
 import TrialVisitGuide from "./TrialVisitGuide";
+// 체험 셔틀 요청(2026-11-19) — 입력 부품과 검사 규칙은 관리자 체험 상세와 같이 쓴다
+import TrialShuttleRequestFields from "@/components/trial/TrialShuttleRequestFields";
+import { EMPTY_TRIAL_SHUTTLE_FORM, trialShuttleFormErrors, type TrialShuttleErrors, type TrialShuttleFormValue } from "@/lib/trial/trialShuttleRequest";
 
 interface Props {
     availableSlots: AvailableSlot[];
@@ -106,6 +109,9 @@ export default function TrialApplicationForm({ availableSlots, contactPhone, ini
     // 신청 직후 서버가 준 결제 링크 토큰(이 신청에만 묶임). 없으면 계좌 안내로 대체한다.
     // ⚠️ useState 순서: 렌더 테스트가 훅 순서(0=step, 1=form …)로 상태를 흉내 내므로 새 상태는 맨 뒤에 둔다.
     const [paymentToken, setPaymentToken] = useState<string | null>(null);
+    // 셔틀 요청(기본 «필요 없음»)과 칸별 안내 — 위 주의대로 새 상태는 맨 뒤
+    const [shuttle, setShuttle] = useState<TrialShuttleFormValue>(EMPTY_TRIAL_SHUTTLE_FORM);
+    const [shuttleErrors, setShuttleErrors] = useState<TrialShuttleErrors>({});
     const errorRef = useRef<HTMLDivElement>(null);
 
     const setError = (message: string) => {
@@ -211,6 +217,13 @@ export default function TrialApplicationForm({ availableSlots, contactPhone, ini
         return true;
     };
 
+    // 셔틀 «필요»를 골랐는데 위치(좌표)나 위치명이 비면 그 칸 아래에 안내하고 다음 단계로 못 간다
+    const validateShuttle = (): boolean => {
+        const errors = trialShuttleFormErrors(shuttle);
+        setShuttleErrors(errors);
+        return Object.keys(errors).length === 0;
+    };
+
     const loadExistingApplication = async () => {
         const existing = await findExistingTrialApplicationForEdit({
             childName: form.childName,
@@ -245,6 +258,7 @@ export default function TrialApplicationForm({ availableSlots, contactPhone, ini
         if (step === 2) {
             if (!validateStep1()) { setStep(1); return; }
             if (!validateStep2()) return;
+            if (!validateShuttle()) return;
             try {
                 const loadedSchedule = await loadExistingApplication();
                 if (loadedSchedule && !validateStep1(loadedSchedule)) { setStep(1); return; }
@@ -270,6 +284,8 @@ export default function TrialApplicationForm({ availableSlots, contactPhone, ini
             setError("체험수업 비용 확인을 체크해주세요.");
             return;
         }
+        // 마지막 제출 직전에도 셔틀 칸을 다시 본다(문제가 있으면 그 칸이 있는 2단계로)
+        if (!validateShuttle()) { setStep(2); return; }
 
         startTransition(async () => {
             try {
@@ -288,6 +304,8 @@ export default function TrialApplicationForm({ availableSlots, contactPhone, ini
                     source: form.source,
                     trialFeeNoticeAgreed: form.trialFeeNoticeAgreed,
                     honeypot: form.honeypot,
+                    // «필요»일 때만 보낸다 — «필요 없음»이면 예전과 같은 모양 그대로
+                    ...(shuttle.needed ? { shuttle } : {}),
                 });
                 setCompletionMode(result.mode === "updated" ? "updated" : "created");
                 setPaymentToken((result as { paymentToken?: string | null }).paymentToken ?? null);
@@ -438,6 +456,12 @@ export default function TrialApplicationForm({ availableSlots, contactPhone, ini
                         <SelectField label="학년" required value={form.childGrade} onChange={(value) => update("childGrade", value)} options={GRADE_OPTIONS} />
                         <Field label="학부모 연락처" required type="tel" value={form.parentPhone} onChange={(value) => update("parentPhone", formatPhone(value))} placeholder="010-0000-0000" />
                         <SelectField label="신청경로" required value={form.source} onChange={(value) => update("source", value)} options={SOURCE_OPTIONS.map((option) => option.label)} valueMap={SOURCE_OPTIONS} />
+                        {/* 체험 셔틀 요청 — 기본 «필요 없음». «필요»를 고르면 등원·하원, 위치(지도)·위치명을 받는다 */}
+                        <TrialShuttleRequestFields
+                            value={shuttle}
+                            errors={shuttleErrors}
+                            onChange={(next) => { setShuttle(next); setShuttleErrors({}); }}
+                        />
                     </div>
                 )}
 

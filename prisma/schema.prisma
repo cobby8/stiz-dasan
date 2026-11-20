@@ -2025,15 +2025,59 @@ model TrialLead {
   staffAttendanceStatus       String?
   staffAttendanceAt           DateTime?             @db.Timestamptz(6)
   staffAttendanceByUserId     String?
+  // 체험 셔틀(마이그레이션 20261119100000) — 요청(신청서·관리자 입력)과 배정 상태. 체험 날 하루만 태운다(무료 · 정규 명단과 무관).
+  shuttleNeeded               Boolean               @default(false)
+  shuttleDirection            String? // BOTH | PICKUP(등원만) | DROPOFF(하원만) (DB CHECK)
+  shuttlePickupName           String?
+  shuttlePickupAddress        String?
+  shuttlePickupLat            Float?
+  shuttlePickupLng            Float?
+  // 하원 위치 4칸이 전부 NULL 이면 «등원과 같은 곳»
+  shuttleDropoffName          String?
+  shuttleDropoffAddress       String?
+  shuttleDropoffLat           Float?
+  shuttleDropoffLng           Float?
+  shuttleStatus               String                @default("NONE") // NONE | REQUESTED(배정 대기) | ASSIGNED | UNAVAILABLE(셔틀 어려움) (DB CHECK)
+  shuttleRequestedAt          DateTime?             @db.Timestamptz(6)
+  shuttleAdminNote            String?
   createdAt                   DateTime              @default(now()) @db.Timestamptz(6)
   updatedAt                   DateTime              @default(now()) @updatedAt @db.Timestamptz(6)
   enrollmentShortLinks        EnrollmentShortLink[]
   trialFeePayments            TrialFeePayment[]
+  shuttleRides                TrialShuttleRide[]
 
   @@index([status])
   @@index([createdAt])
   @@index([status, createdAt])
   @@index([scheduledClassId, scheduledDate])
+}
+
+/// 체험 셔틀 «하루 탑승» 1건 = 체험 학생 한 명의 그날 한 방향(마이그레이션 20261119100000 의 사본).
+/// 정규 명단(RegularShuttleStop)에 넣지 않는다 — 매주 반복되고 청구 자동 발행을 멈추기 때문. 탑승 체크는 ShuttleBoarding(direction='TRIAL', shuttleRequestId=이 id).
+/// 부분 인덱스(살아 있는 줄은 학생·방향마다 하나 / 날짜 조회)는 Prisma 가 표현하지 못해 마이그레이션 SQL 에만 있다.
+model TrialShuttleRide {
+  id               String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  trialLeadId      String
+  serviceDate      String // 'YYYY-MM-DD' (KST 달력 날짜)
+  direction        String // BOARD(등원) | ALIGHT(하원) — 정규 명단과 같은 값
+  classTime        String // 끼울 정규 운행 묶음(그 요일 명단의 수업시간 글자)
+  afterStopName    String? // 그 묶음에서 «이 정류장 다음». NULL = 묶음 맨 앞
+  sortOrder        Int       @default(0)
+  stopName         String // 위치명(필수)
+  address          String?
+  latitude         Float?
+  longitude        Float?
+  arriveTime       String // 예상 시각 'HH:MM'
+  status           String    @default("ACTIVE") // ACTIVE | CANCELLED
+  cancelReason     String?
+  cancelledAt      DateTime? @db.Timestamptz(6)
+  createdByUserId  String?
+  revision         Int       @default(0) // 배정 내용이 바뀐 횟수(기사님 알림 키에 섞는다)
+  driverNotifiedAt DateTime? @db.Timestamptz(6)
+  parentSmsSentAt  DateTime? @db.Timestamptz(6)
+  createdAt        DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt        DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  trialLead        TrialLead @relation(fields: [trialLeadId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 }
 
 /// 체험비 토스 주문 1건 = 1행 (마이그레이션 20261110150000 의 사본). 체험 신청자는 원생이 아니라 PaymentTransaction 을 못 써서 따로 둔다.

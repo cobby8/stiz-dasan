@@ -728,6 +728,8 @@ test("⑦ 기사님 토큰 링크에는 건강 글 전문이 실리지 않는다
       "@/lib/seasonal/shuttle-optimize": { getDispatchForView: async () => ({ vehicles: [] }) },
       "./regularDriverRoute": { getRegularDriverDay: async () => ({ classes: [], holiday: null }) },
       "./driverStatusRead": { readDriverBoarding: async () => ({ boarding: {} }) },
+      // 체험 셔틀 하루 탑승(2026-11-19) — 이 테스트는 건강 글만 본다(체험 줄 없음)
+      "./trialShuttle": { loadTrialRidesForDate: async () => [] },
       "./unifiedDriverRunLogic": { buildUnifiedRun: () => [{ key: "stop", riders: [rider("row1"), rider("row2")] }] },
     });
     return { mod, sqls };

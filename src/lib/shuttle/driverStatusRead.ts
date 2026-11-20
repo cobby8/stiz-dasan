@@ -1,7 +1,8 @@
 import { prisma } from "@/lib/prisma";
 
 /** 조회 오류는 '미체크'가 아니다. 호출자가 실패를 명시적으로 처리하도록 예외를 유지한다. */
-export async function readDriverBoarding(date: string, direction: "REGULAR" | "PICKUP" | "DROPOFF") {
+// direction 'TRIAL' = 체험 셔틀 하루 탑승(shuttleRequestId = TrialShuttleRide.id, 2026-11-19).
+export async function readDriverBoarding(date: string, direction: "REGULAR" | "PICKUP" | "DROPOFF" | "TRIAL") {
   const rows = await prisma.$queryRawUnsafe<{ shuttleRequestId: string; status: string; checkedAt: Date | string }[]>(
     `SELECT "shuttleRequestId", "status", "checkedAt" FROM "ShuttleBoarding" WHERE "serviceDate" = $1 AND "direction" = $2`,
     date, direction,

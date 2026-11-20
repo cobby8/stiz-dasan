@@ -4,6 +4,8 @@ import { todayKst } from "@/lib/datetime/kst";
 import { countEnrollmentChangesNeedingCheck } from "@/lib/enrollment/admin-change-request";
 import { buildAdminDailyDigest, type UnpaidMonthRow } from "@/lib/admin-daily-digest";
 import { canSeeAllMoney } from "@/lib/auth/moneyAccess";
+// 체험 셔틀(2026-11-19) — 체험 전날까지 배정이 없으면 아침 요약에 한 줄(실패·칸 없음이면 0)
+import { countTrialShuttleWaiting } from "@/lib/shuttle/trialShuttle";
 
 // ── 원장 아침 요약 알림 (매일 KST 08:30, 크론) ─────────────────────────────
 //
@@ -76,7 +78,10 @@ export async function runAdminDailyDigest(): Promise<AdminDailyDigestResult> {
     countPendingKakaoIntakes(),
   ]);
 
-  const digestInput = { todayYmd: todayKst(), unpaid, needsCheckCount, pendingChangeCount, kakaoPendingCount };
+  // 오늘·내일(KST) 체험인데 셔틀 배정 대기인 건 — 위 조회들이 끝난 뒤 따로 읽는다(동시 조회를 늘리지 않는다)
+  const trialShuttleWaitingCount = await countTrialShuttleWaiting({ withinDays: 1 });
+
+  const digestInput = { todayYmd: todayKst(), unpaid, needsCheckCount, pendingChangeCount, kakaoPendingCount, trialShuttleWaitingCount };
   // 2026-11-14 부원장 금액 가림: 원장용(미납 금액 포함)과 부원장용(건수만) 두 벌을 만든다.
   //   «보낼 일이 있는가»는 두 벌이 같다(금액은 줄의 꼬리일 뿐) → 원장용으로 판단한다.
   const digest = buildAdminDailyDigest(digestInput);
