@@ -382,7 +382,8 @@ test("관리자 출결 알림: 저장 응답 뒤에·한 명씩 차례로·학�
   assert.match(helper, /const startsAtMs = input\.startsAtMs \?\? kstAt\(input\.sessionYmd, classRows\[0\]\?\.startTime\);/, "정규는 반 시작 시각(kst.ts)");
   assert.match(helper, /todayOnly: true, startsAtMs, nowMs: savedAtMs,/);
   assert.match(helper, /await getStudentParentRecipients\(targets\.map/, "반 수강 조회가 아니라 학생으로 바로");
-  assert.doesNotMatch(admin.slice(start), /getClassParentRecipients/);
+  // 출결 알림 함수 안에서만 본다(같은 파일의 반 공지 알림은 반 수강 조회가 맞다 — 2026-11-20)
+  assert.doesNotMatch(helper, /getClassParentRecipients/);
   assert.match(helper, /for \(const target of targets\) \{/, "차례로 보낸다(DB 연결 한도 5)");
   assert.doesNotMatch(helper, /Promise\.all/);
   // 방학특강은 회차 시작 시각

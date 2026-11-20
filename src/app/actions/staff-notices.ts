@@ -46,7 +46,8 @@ export async function createStaffClassNotice(input: { classId: string; title: st
     recipient,
     title,
     message: content,
-    linkUrl: "/notices",
+    // 누르면 마이페이지의 그 공지로 — 공개 목록(/notices)에는 반 공지가 없다(2026-11-20 원장 결정)
+    linkUrl: `/mypage/news/${noticeId}`,
     noticeId,
   })));
   const deliveries = attempted.flatMap((item) => item.status === "fulfilled" ? [item.value] : []);

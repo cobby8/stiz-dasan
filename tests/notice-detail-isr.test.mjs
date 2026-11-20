@@ -37,6 +37,25 @@ test("반 공지는 인스타 발행도 거절한다(공개 노출·깨진 링�
   assert.match(fn, /WHERE id = \$1\s+AND "targetType" = 'ALL'/);
 });
 
+// 2026-11-20 원장 결정: 반 공지 알림은 그 반 학부모에게만, 누르면 마이페이지의 그 공지로
+test("반 공지 알림 — 선생님 반 공지는 /mypage/news/[id] 로 연결", () => {
+  const src = readFileSync("src/app/actions/staff-notices.ts", "utf8");
+  assert.match(src, /eventType: "CLASS_NOTICE"[\s\S]*?linkUrl: `\/mypage\/news\/\$\{noticeId\}`/);
+  assert.doesNotMatch(src, /linkUrl: "\/notices"/);
+});
+
+test("반 공지 알림 — 관리자 반 공지는 전체 학부모가 아니라 그 반 학부모에게만", () => {
+  const src = readFileSync("src/app/actions/admin.ts", "utf8");
+  const start = src.indexOf("export async function createNotice(");
+  const body = src.slice(start, src.indexOf("\n}\n", start));
+  assert.match(body, /RETURNING id/, "새 공지 번호를 받아 링크에 쓴다");
+  assert.match(body, /if \(targetType === "CLASS"\) \{\s*[\s\S]*?notifyClassNoticeParents\([\s\S]*?\} else \{[\s\S]*?notifyAllParents\(/, "전체 알림은 전체 공지에서만");
+  const helper = src.slice(src.indexOf("async function notifyClassNoticeParents"), start);
+  assert.match(helper, /getClassParentRecipients\(classId\)/);
+  assert.match(helper, /linkUrl: `\/mypage\/news\/\$\{noticeId\}`/);
+  assert.match(helper, /catch \(e\)/, "알림 실패가 공지 저장 실패로 보이지 않는다");
+});
+
 test("공지 수정·삭제는 공지 상세 주소도 바로 갱신한다", () => {
   const src = readFileSync("src/app/actions/admin.ts", "utf8");
   for (const fn of ["updateNotice", "deleteNotice"]) {
