@@ -22,22 +22,34 @@ export async function generateStaticParams() {
     return [];
 }
 
+// 공개 화면에는 «전체 공지»만 보인다(2026-11-20 원장 결정).
+// 특정 반에만 보낸 공지(targetType=CLASS)는 주소를 알아도 «없는 공지(404)»로 보이고,
+// 그 반 학부모는 마이페이지 소식(/mypage/news/[id])에서 로그인한 채로 본다.
+// 공개 목록·홈·챗봇은 원래부터 전체 공지만 보여 줬고, 이 상세 화면만 반 공지가 열리던 구멍이었다.
+// 반 공지를 전체 공지로 바꾸면 updateNotice 가 이 주소를 갱신해 저장된 404 도 바로 풀린다.
+function publicOnly<T extends { targetType?: string | null }>(notice: T | null): T | null {
+    return notice && notice.targetType === "ALL" ? notice : null;
+}
+
 // 공지마다 제목·요약·canonical(/notices/[id])을 따로 단다 — 홈 메타를 물려받아 검색에서 중복 처리되던 문제.
 // getNoticeByIdOrThrow 는 react cache 로 감싸져 있어 본문 렌더와 같은 요청에서 DB 를 두 번 읽지 않는다.
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
     const { id } = await params;
-    return buildNoticeMetadata(await getNoticeByIdOrThrow(id));
+    // 반 공지는 제목도 메타에 싣지 않는다(«공지를 찾을 수 없습니다» + 검색 제외)
+    return buildNoticeMetadata(publicOnly(await getNoticeByIdOrThrow(id)));
 }
 
 export default async function NoticeDetailPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = await params;
 
     // DB에서 공지사항 상세와 학원 설정을 병렬로 가져온다
-    const [notice, settings] = await Promise.all([
+    const [found, settings] = await Promise.all([
         getNoticeByIdOrThrow(id),
         getAcademySettings() as Promise<any>,
     ]);
 
+    // 없는 공지와 반 공지는 똑같이 404 — 반 공지가 있다는 사실도 드러내지 않는다
+    const notice = publicOnly(found);
     if (!notice) notFound();
 
     const phone = settings.contactPhone || "010-0000-0000";
