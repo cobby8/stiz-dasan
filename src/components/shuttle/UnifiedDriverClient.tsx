@@ -21,6 +21,8 @@ import { readBoardingResult, saveAndVerifyBoarding } from "@/lib/shuttle/driverS
 import { boardAnywayConfirmText, boardedAnywayNote, riderBoardAnyway, riderBoardingView, riderDefaultStatus, riderLockLabel, stopAbsenceSummary, type UnifiedRider, type UnifiedRow } from "@/lib/shuttle/unifiedDriverRunLogic";
 import { userErrorMessage } from "@/components/staff/userErrorMessage";
 import { todayKst } from "@/lib/datetime/kst";
+import { DRIVER_START_PARAM, shouldAutoStartRun } from "@/lib/staff-session-rules";
+import { replaceUrlSyncingNext } from "@/lib/navigation/listQuery";
 import { DRIVER_RUN_PROBE_TIMEOUT_MS, DRIVER_RUN_PROBE_URL, DRIVER_RUN_REFRESH_MS, driverRunRefreshMode, mergeServerBoarding } from "@/lib/shuttle/driverRunRefresh";
 import type { RunHoliday } from "@/lib/shuttle/regularRunDayRules";
 
@@ -38,7 +40,7 @@ type SortKey = { minutes: number | null; seq: number };
 function digits(p: string | null): string | null { if (!p) return null; const d = p.replace(/[^0-9]/g, ""); return d.length >= 9 ? d : null; }
 
 export default function UnifiedDriverClient({
-  token = "", date, rows, initialBoarding, initialBoardingReliable = true, prevDate, nextDate, today, driverLabel, focusDirection = null, academy = null, holiday = null, healthHint = "앱에 로그인하면 내용이 보여요", readOnly = false,
+  token = "", date, rows, initialBoarding, initialBoardingReliable = true, prevDate, nextDate, today, driverLabel, focusDirection = null, academy = null, holiday = null, healthHint = "앱에 로그인하면 내용이 보여요", readOnly = false, autoStart = false,
 }: {
   token?: string;
   date: string;
@@ -62,6 +64,8 @@ export default function UnifiedDriverClient({
    * 기사님이 찍은 결과가 보이도록 30초마다 새로 읽는다. 체크는 «선생님 운행»을 눌러 운행 모드로 들어가야 한다.
    */
   readOnly?: boolean;
+  /** 앱의 셔틀 명단에서 «운행 시작»을 눌러 온 화면 — 도착하자마자 위치 공유 시작(앱의 동의 창)을 한 번 요청한다(2026-11-20). */
+  autoStart?: boolean;
 }) {
   const router = useRouter();
   const accountRun = !token;
@@ -115,12 +119,35 @@ export default function UnifiedDriverClient({
   // 편집 중에는 원본 스냅샷을 유지해 다른 화면의 변경을 baseline 검증으로 잡는다.
   const useOrderOverrides = editing || orderSourceRows === rows;
 
-  const { state: gpsState, transmission, lastSentAt, accuracy, mode: gpsMode = "web", nativeRunning = false, nativeMessage, start: gpsStart, stop: gpsStop } = useGpsShare(token, driverLabel);
+  const { state: gpsState, transmission, lastSentAt, accuracy, mode: gpsMode = "web", nativeReady = false, nativeRunning = false, nativeMessage, start: gpsStart, stop: gpsStop } = useGpsShare(token, driverLabel);
   useEffect(() => {
     if (accountRun || gpsMode !== "native") return;
     setRunState(nativeRunning || gpsState === "requesting" || transmission === "stopping" ? "running" : transmission === "stopped" || transmission === "stop-unknown" ? "ended" : "idle");
   }, [accountRun, gpsMode, nativeRunning, gpsState, transmission]);
-  function handleRunStart() { if (gpsMode === "web") setRunState("running"); gpsStart(); }
+  // «운행 시작 한 번»(2026-11-20) — 셔틀 명단에서 눌러 온 화면은 도착하자마자 앱에 시작을 요청한다(앱이 동의 창 → 위치 권한 창을 띄운다).
+  // 예전에는 여기서 «운행 시작»을 한 번 더 눌러야 해서, 첫 번째만 누르고 체크만 하면 위치가 나가지 않았다.
+  const autoStartTried = useRef(false);
+  // 주소의 «눌러 왔다» 표시를 지운다 — 화면을 다시 불러와도 동의 창이 또 뜨지 않게
+  const stripStartMark = useCallback(() => {
+    try {
+      const url = new URL(window.location.href);
+      if (!url.searchParams.has(DRIVER_START_PARAM)) return;
+      url.searchParams.delete(DRIVER_START_PARAM);
+      replaceUrlSyncingNext(`${url.pathname}${url.search}${url.hash}`);
+    } catch { /* 주소를 못 고쳐도 운행에는 지장이 없다 */ }
+  }, []);
+  // 기사님이 직접 눌러 시작했으면 도착 자동 요청은 끝난 것으로 본다(앱 상태가 늦게 도착해 동의 창이 한 번 더 뜨지 않게)
+  function handleRunStart() { autoStartTried.current = true; stripStartMark(); if (gpsMode === "web") setRunState("running"); gpsStart(); }
+  useEffect(() => {
+    if (!autoStart || autoStartTried.current) return;
+    // 이미 운행 중인 화면이면 다시 묻지 않는다
+    if (gpsMode === "native" && nativeReady && nativeRunning) { autoStartTried.current = true; stripStartMark(); return; }
+    // 판단은 앱이 알려 준 상태(gpsState·transmission)로 한다 — 화면이 따로 계산한 runState 는 한 박자 늦게 바뀐다
+    if (!shouldAutoStartRun({ autoStart, alreadyTried: autoStartTried.current, gpsMode, nativeReady, nativeRunning, gpsState, transmission })) return;
+    autoStartTried.current = true;
+    stripStartMark();
+    gpsStart();
+  }, [autoStart, gpsMode, nativeReady, nativeRunning, gpsState, transmission, gpsStart, stripStartMark]);
   async function handleRunEnd() { await gpsStop(); if (gpsMode === "web") setRunState("ended"); }
   // 운행 중이 아니게 되면(앱이 먼저 종료 등) 열려 있던 종료 확인은 닫는다.
   useEffect(() => { if (runState !== "running") setConfirmEnd(false); }, [runState]);

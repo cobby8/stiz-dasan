@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { requireStaff } from "@/lib/auth-guard";
 import { shuttleScope } from "@/lib/account/roles";
 import { findRollingDriverRunToken } from "@/lib/shuttle/regularRun";
-import { driverRunMissingKeyPath } from "@/lib/staff-session-rules";
+import { driverAppRunHref, driverRunMissingKeyPath } from "@/lib/staff-session-rules";
 import { looksLikeStoreApp } from "@/lib/storeApp";
 
 export const dynamic = "force-dynamic";
@@ -29,5 +29,6 @@ export default async function StaffRunOpenPage() {
     const storeApp = looksLikeStoreApp({ userAgent: (await headers()).get("user-agent") });
     redirect(driverRunMissingKeyPath(storeApp));
   }
-  redirect(`/driver/${token}`);
+  // 이 길은 «운행 시작»을 눌러서만 온다 → 운행 화면이 도착하자마자 위치 공유 동의 창을 띄우게 표시를 단다(2026-11-20)
+  redirect(driverAppRunHref(token));
 }

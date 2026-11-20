@@ -4,8 +4,10 @@ import android.Manifest;
 import android.app.*;
 import android.content.*;
 import android.content.pm.PackageManager;
+import android.location.LocationManager;
 import android.net.Uri;
 import android.os.*;
+import android.provider.Settings;
 import android.view.View;
 import android.webkit.*;
 import android.widget.*;
@@ -24,6 +26,7 @@ public final class MainActivity extends Activity {
     private boolean visible;
     private final PendingRunStart pendingStart = new PendingRunStart();
     private boolean consentDialogOpen;
+    private boolean settingsHelpOpen; // «설정 열기» 안내 창이 떠 있나(겹쳐 띄우지 않는다)
     private boolean navigationDialogOpen, browserAuthDialogOpen, accountRunDialogOpen;
     private String pendingNavigation;
     private volatile boolean unfinishedRun;
@@ -594,10 +597,39 @@ public final class MainActivity extends Activity {
         try {
             if (step == PendingRunStart.Step.LOCATION_PERMISSION) requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION}, 10);
             else if (step == PendingRunStart.Step.NOTIFICATION_PERMISSION && Build.VERSION.SDK_INT >= 33) requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 11);
-            else if (step == PendingRunStart.Step.START) launchRun(token);
+            else if (step == PendingRunStart.Step.START) {
+                // 휴대폰 위치(GPS) 자체가 꺼져 있으면 권한이 있어도 위치가 오지 않아 «위치 대기»로만 남는다 → 켜는 화면으로 바로 보낸다(1.0.7)
+                if (!deviceLocationOn()) {
+                    error("휴대폰 위치가 꺼져 있습니다. 위치를 켠 뒤 운행 시작을 다시 눌러 주세요.");
+                    showSettingsHelp("휴대폰 위치가 꺼져 있습니다", "운행 중 위치를 보내려면 휴대폰의 «위치»가 켜져 있어야 합니다. 설정에서 위치를 켠 뒤 운행 시작을 다시 눌러 주세요.", new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS));
+                } else launchRun(token);
+            }
         } catch (RuntimeException failure) {
             pendingStart.cancel(); error("권한 요청을 시작하지 못했습니다. 운행 화면에서 다시 시도해 주세요.");
         }
+    }
+    /** 휴대폰 위치(GPS·네트워크 위치)가 켜져 있나. 확인하지 못하면 켜진 것으로 본다(시작을 막지 않는다). */
+    private boolean deviceLocationOn() {
+        try {
+            LocationManager manager = (LocationManager) getSystemService(LOCATION_SERVICE);
+            if (manager == null) return true;
+            if (Build.VERSION.SDK_INT >= 28) return manager.isLocationEnabled();
+            return manager.isProviderEnabled(LocationManager.GPS_PROVIDER) || manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER);
+        } catch (RuntimeException failure) { return true; }
+    }
+    /** 이 앱의 휴대폰 설정 화면(권한·알림을 바꾸는 곳). */
+    private Intent appSettingsIntent() {
+        return new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", getPackageName(), null));
+    }
+    /** 권한 거절·위치 꺼짐 안내 — «설정 열기»를 누르면 해당 휴대폰 설정 화면으로 간다. 설정을 바꾼 뒤 운행 시작은 기사님이 다시 누른다. */
+    private void showSettingsHelp(String title, String message, Intent settings) {
+        if (isFinishing() || isDestroyed() || settingsHelpOpen) return;
+        settingsHelpOpen = true;
+        new AlertDialog.Builder(this).setTitle(title).setMessage(message)
+            .setPositiveButton("설정 열기", (dialog, which) -> {
+                try { startActivity(settings); }
+                catch (RuntimeException failure) { showAppMessage("설정 화면을 열지 못했습니다. 휴대폰의 설정 앱에서 직접 바꿔 주세요."); }
+            }).setNegativeButton("닫기", null).setOnDismissListener(dialog -> settingsHelpOpen = false).show();
     }
     private void launchRun(String token) {
         if (BuildConfig.STIZ_SANDBOX) { error("격리시험에서는 실제 위치 공유를 시작하지 않습니다."); return; }
@@ -614,12 +646,19 @@ public final class MainActivity extends Activity {
             boolean granted = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED;
             pendingStart.permissionResult(granted);
             if (granted) requestPermissionsAndStart();
-            else error("정확한 위치 권한이 필요합니다. 휴대폰 설정에서 허용해 주세요.");
+            else {
+                error("정확한 위치 권한이 필요합니다. 휴대폰 설정에서 허용해 주세요.");
+                // 한 번 거절하면 안드로이드가 권한 창을 다시 띄워 주지 않을 수 있다 → 앱 설정 화면으로 바로 보낸다(1.0.7)
+                showSettingsHelp("위치 권한이 필요합니다", "운행 중 위치를 보내려면 위치 권한을 «정확한 위치»로 허용해야 합니다. 설정의 «권한 → 위치»에서 허용한 뒤 운행 시작을 다시 눌러 주세요.", appSettingsIntent());
+            }
         } else if (request == 11) {
             boolean granted = Build.VERSION.SDK_INT < 33 || checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED;
             pendingStart.permissionResult(granted);
             if (granted) requestPermissionsAndStart();
-            else error("화면 밖에서도 운행 종료를 할 수 있도록 알림 권한을 허용해 주세요.");
+            else {
+                error("화면 밖에서도 운행 종료를 할 수 있도록 알림 권한을 허용해 주세요.");
+                showSettingsHelp("알림 권한이 필요합니다", "운행 중에는 알림에서 «운행 종료»를 누를 수 있어야 합니다. 설정의 «알림»을 허용한 뒤 운행 시작을 다시 눌러 주세요.", appSettingsIntent());
+            }
         }
     }
     private void snapshot() {
