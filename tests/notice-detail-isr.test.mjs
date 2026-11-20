@@ -21,6 +21,22 @@ test("공지 상세 — generateStaticParams 빈 목록 + revalidate 60", () => 
   assert.doesNotMatch(strict, /catch/, "OrThrow 는 오류를 삼키지 않는다");
 });
 
+// 2026-11-20 원장 결정: 반에만 보낸 공지(CLASS)는 공개 상세에서 «없는 공지(404)»로 — 마이페이지 소식에서만 본다
+test("공개 공지 상세는 전체 공지(ALL)만 — 반 공지는 메타·본문 모두 없는 공지로", () => {
+  const src = readFileSync("src/app/notices/[id]/page.tsx", "utf8");
+  assert.match(src, /notice && notice\.targetType === "ALL" \? notice : null/);
+  assert.match(src, /buildNoticeMetadata\(publicOnly\(await getNoticeByIdOrThrow\(id\)\)\)/, "메타도 거른다(제목 노출 금지)");
+  const body = src.slice(src.indexOf("export default async function NoticeDetailPage"));
+  assert.match(body, /const notice = publicOnly\(found\);\s*if \(!notice\) notFound\(\);/, "본문도 거른 뒤 404");
+  assert.doesNotMatch(body.slice(0, body.indexOf("publicOnly(found)")), /notice\./, "거르기 전에 공지 내용을 쓰지 않는다");
+});
+
+test("반 공지는 인스타 발행도 거절한다(공개 노출·깨진 링크 방지)", () => {
+  const src = readFileSync("src/app/actions/social-campaigns.ts", "utf8");
+  const fn = src.slice(src.indexOf("async function getNoticeForSocial"), src.indexOf("function buildPreview"));
+  assert.match(fn, /WHERE id = \$1\s+AND "targetType" = 'ALL'/);
+});
+
 test("공지 수정·삭제는 공지 상세 주소도 바로 갱신한다", () => {
   const src = readFileSync("src/app/actions/admin.ts", "utf8");
   for (const fn of ["updateNotice", "deleteNotice"]) {

@@ -98,12 +98,15 @@ async function getNoticeForSocial(noticeId: string) {
     `SELECT id, title, content, "attachmentsJSON"
      FROM "Notice"
      WHERE id = $1
+       AND "targetType" = 'ALL'
      LIMIT 1`,
     noticeId,
   );
 
+  // 2026-11-20 원장 결정: 반에만 보낸 공지는 공개하지 않는다.
+  // 인스타에 올리면 내용·사진이 공개되고, 연결 주소(/notices/[id])도 반 공지는 404 라 깨진 링크가 된다.
   if (!rows[0]) {
-    throw new Error("공지사항을 찾지 못했습니다.");
+    throw new Error("공지사항을 찾지 못했습니다. 반 공지는 인스타에 올리지 않습니다(전체 공지만 가능).");
   }
 
   return rows[0];
