@@ -25,12 +25,6 @@ const MOBILE_SECONDARY_ACTION_CLASS = [
   "text-[var(--color-public-muted)] transition-colors hover:bg-[var(--color-public-tint)] dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)] dark:text-[var(--color-public-ink)]",
 ].join(" ");
 
-const HEADER_ICON_ACTION_CLASS = [
-  "inline-flex h-10 shrink-0 items-center justify-center whitespace-nowrap rounded-xl border border-[var(--color-public-line)] px-3 text-sm font-medium",
-  "bg-white text-[var(--color-public-muted)] transition-colors hover:border-gray-300 hover:bg-[var(--color-public-tint)] hover:text-[var(--color-public-ink)]",
-  "dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)] dark:text-[var(--color-public-ink)] dark:hover:bg-[var(--color-public-tint)] dark:hover:text-white",
-].join(" ");
-
 type AccountControlsProps = {
   initialRole?: AppRole | null;
 };
@@ -149,7 +143,7 @@ function useAccountState(initialRole: AppRole | null = null) {
 }
 
 export function DesktopAccountControls({ initialRole = null }: AccountControlsProps) {
-  const { accountHref, accountLabel, canAccessAdmin, isLoggedIn, isStaffPrimary, accountViews } =
+  const { accountHref, accountLabel, isLoggedIn, isStaffPrimary, accountViews } =
     useAccountState(initialRole);
 
   return (
@@ -171,12 +165,8 @@ export function DesktopAccountControls({ initialRole = null }: AccountControlsPr
         )}
       </Link>}
 
-      {canAccessAdmin && (
-        <Link href="/staff/quick-post" prefetch={false} aria-label="사진 올리기" title="사진 올리기" className={HEADER_ICON_ACTION_CLASS}>
-          사진 올리기
-        </Link>
-      )}
-
+      {/* 2026-11-20 원장 지시: 홈페이지 머리줄(컴퓨터 화면)에서 «사진 올리기»를 뺀다 — 원장 계정은 버튼이 많아 메뉴가 «전체 메뉴»로 접혔다.
+          사진 올리기는 관리자·선생님 화면과 휴대폰 메뉴(MobileAccountControls)에 그대로 있다 */}
       {isLoggedIn && (
         <form action={logout} className="hidden md:block">
           <button type="submit" onClick={forgetSharedAccountRole} className={DESKTOP_LOGOUT_CLASS}>
