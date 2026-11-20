@@ -55,7 +55,8 @@ export default async function SchedulePage() {
 
             {/* 필터 탭 + 시간표 그리드 (클라이언트 컴포넌트 — useSearchParams 사용) */}
             <ScheduleClient
-                programs={(programs as any[]).map((p) => ({ id: p.id, name: p.name }))}
+                // 방학특강 전용 프로그램은 정규 시간표 필터에서 뺀다(2026-11-19 원장 — /programs·홈과 같은 seasonalOnly 표식)
+                programs={(programs as any[]).filter((p) => !p.seasonalOnly).map((p) => ({ id: p.id, name: p.name }))}
                 // 정원·등록 인원 숫자는 빼고 여유/임박/마감만 넘긴다(페이지 응답에 숫자가 실리지 않게 · f9)
                 allSlots={toPublicScheduleSlots(allSlots)}
                 phone={phone}

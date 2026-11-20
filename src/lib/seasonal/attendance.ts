@@ -2,6 +2,8 @@ import { prisma } from "@/lib/prisma";
 import { weekdayInSeoul } from "@/lib/seasonal/planning";
 // «새 기능 시즌인가» 판정은 공용 함수 하나로(공개 신청·관리자 승인·보강과 같은 기준)
 import { usesPeriodOrDateFeatures } from "@/lib/seasonal/period-pricing";
+// 반 이름 + 횟수(«초등 고학년 주2회») — 반 이름에서 횟수를 빼도 코드로 구분한다(2026-11-19)
+import { offeringTitleWithFrequency } from "@/lib/seasonal/offering-groups";
 
 /** raw 쿼리의 불리언(드라이버에 따라 true 또는 "true")을 JS 불리언으로. */
 function sqlBool(value: unknown): boolean {
@@ -192,7 +194,7 @@ export async function getSeasonalAttendanceBootstrap() {
       ORDER BY "startsAt" DESC`,
   );
   const offerings = await prisma.$queryRawUnsafe<any[]>(
-    `SELECT o.id, o."seasonId", o.title, o.capacity, o."targetGrades", o."instructorName", o."linkedClassId",
+    `SELECT o.id, o."seasonId", o.title, o.code, o.capacity, o."targetGrades", o."instructorName", o."linkedClassId",
             (SELECT COUNT(*) FROM "SpecialProgramSessionDate" sd WHERE sd."offeringId" = o.id) AS "dateCount",
             (SELECT COUNT(*) FROM "SpecialProgramEnrollmentDate" e
                JOIN "SpecialProgramSessionDate" sd2 ON sd2.id = e."sessionDateId"
@@ -204,7 +206,8 @@ export async function getSeasonalAttendanceBootstrap() {
   return {
     seasons: seasons.map((s) => ({ id: s.id, title: s.title, status: s.status, startsAt: s.startsAt, endsAt: s.endsAt })),
     offerings: offerings.map((o) => ({
-      id: o.id, seasonId: o.seasonId, title: o.title,
+      // 반 이름에서 «주N회»를 뺐어도(«초등 고학년») 코드의 횟수를 붙여 반을 구분한다(2026-11-19)
+      id: o.id, seasonId: o.seasonId, title: offeringTitleWithFrequency(o),
       capacity: o.capacity == null ? null : Number(o.capacity),
       targetGrades: o.targetGrades ?? null, instructorName: o.instructorName ?? null,
       linkedClassId: o.linkedClassId ?? null,
@@ -231,7 +234,7 @@ export async function countPendingMakeups(): Promise<number> {
 // 2) 특강 회차(날짜)별 보드 — 정원/출결 요약
 export async function getOfferingDateBoard(offeringId: string) {
   const offeringRows = await prisma.$queryRawUnsafe<any[]>(
-    `SELECT id, title, capacity, "instructorName" FROM "SpecialProgramOffering" WHERE id = $1 LIMIT 1`,
+    `SELECT id, title, code, capacity, "instructorName" FROM "SpecialProgramOffering" WHERE id = $1 LIMIT 1`,
     offeringId,
   );
   const offering = offeringRows[0];
@@ -288,7 +291,7 @@ export async function getOfferingDateBoard(offeringId: string) {
   });
   return {
     offering: {
-      id: offering.id, title: offering.title, capacity,
+      id: offering.id, title: offeringTitleWithFrequency(offering), capacity,
       instructorName: offering.instructorName ?? null,
       totalApprovedStudents, // 반 전체 승인 학생 수(요일 무관)
       courtOfferingCount: courtOccupancy?.offeringCount ?? 1, // 이 코트를 함께 쓰는 반 개수
@@ -302,7 +305,7 @@ export async function getOfferingDateBoard(offeringId: string) {
 // 3) 특정 날짜(회차) 명단
 export async function getDateRoster(sessionDateId: string) {
   const info = await prisma.$queryRawUnsafe<any[]>(
-    `SELECT sd.id, sd."startsAt", sd."endsAt", sd.location, o.id AS "offeringId", o.title AS "offeringTitle",
+    `SELECT sd.id, sd."startsAt", sd."endsAt", sd.location, o.id AS "offeringId", o.title AS "offeringTitle", o.code AS "offeringCode",
             o.capacity, o."instructorName"
        FROM "SpecialProgramSessionDate" sd
        JOIN "SpecialProgramOffering" o ON o.id = sd."offeringId"
@@ -349,7 +352,7 @@ export async function getDateRoster(sessionDateId: string) {
              it.id AS "itemId", a."childName", a."childGrade", a."childSchool", a."parentName", a."parentPhone",
              a."selectedWeekdays",
              a."selectedDates", a."periodLabel",
-             o2.title AS "rowOfferingTitle",
+             o2.title AS "rowOfferingTitle", o2.code AS "rowOfferingCode",
              (sd2.id = $1) AS "isThisOffering",
              mk."absentSessionDateId", absd."startsAt" AS "originStartsAt"
         FROM "SpecialProgramEnrollmentDate" e
@@ -381,7 +384,7 @@ export async function getDateRoster(sessionDateId: string) {
   const capacity = meta.capacity == null ? null : Number(meta.capacity);
   return {
     date: {
-      sessionDateId: meta.id, offeringId: meta.offeringId, offeringTitle: meta.offeringTitle,
+      sessionDateId: meta.id, offeringId: meta.offeringId, offeringTitle: offeringTitleWithFrequency({ title: meta.offeringTitle, code: meta.offeringCode }),
       dateLabel: p.dateLabel, dayLabel: p.dayLabel, weekdayKey: p.weekdayKey,
       startTime: p.timeLabel, endTime: end.timeLabel,
       location: meta.location ?? null, capacity,
@@ -404,7 +407,7 @@ export async function getDateRoster(sessionDateId: string) {
         itemId: r.itemId, childName: r.childName, childGrade: r.childGrade ?? null, childSchool: r.childSchool ?? null,
         parentName: r.parentName, parentPhone: r.parentPhone,
         sessionDateId: r.sessionDateId, // 이 좌석이 속한 회차(형제 반일 수 있음)
-        offeringTitle: r.rowOfferingTitle ?? null, // 학생이 속한 반 이름 (코트 합산 명단에서 반 구분용)
+        offeringTitle: r.rowOfferingTitle == null ? null : offeringTitleWithFrequency({ title: r.rowOfferingTitle, code: r.rowOfferingCode }), // 학생이 속한 반 이름 (코트 합산 명단에서 반 구분용)
         isThisOffering: r.isThisOffering === true, // 열려있는 회차와 같은 반인지 (선택된 반 강조용)
         selectedWeekdays, // 학생이 신청한 요일 키 목록 (예: ["MON","WED"])
         // 화면용 라벨 (예: "월·수", 날짜 선택이면 "날짜 선택 3회")
@@ -455,7 +458,7 @@ export async function getSeasonalDatesForStaff(userId: string, role: string, ymd
   // - linkedClassId 는 startClassSession(정규 서버액션)이 요구하는 classId 이므로 함께 내려준다.
   // Session은 시작 시 sessionKey `seasonal:<sessionDateId>`로 그 회차에 1:1로 붙는다(s."specialProgramSessionDateId" = sd.id).
   const rows = await prisma.$queryRawUnsafe<any[]>(
-    `SELECT sd.id, sd."startsAt", sd."endsAt", o.title AS "offeringTitle", o.capacity, o."instructorName",
+    `SELECT sd.id, sd."startsAt", sd."endsAt", o.title AS "offeringTitle", o.code AS "offeringCode", o.capacity, o."instructorName",
             o."linkedClassId" AS "linkedClassId",
             s.id AS "sessionId", s.status AS "sessionStatus",
             COUNT(e.id) FILTER (WHERE e.status = 'SCHEDULED') AS scheduled,
@@ -466,7 +469,7 @@ export async function getSeasonalDatesForStaff(userId: string, role: string, ymd
        LEFT JOIN "Session" s ON s."specialProgramSessionDateId" = sd.id
       WHERE (sd."startsAt" AT TIME ZONE 'Asia/Seoul')::date = $1::date
         AND ($2 = false OR o."instructorId" = $3)
-      GROUP BY sd.id, sd."startsAt", sd."endsAt", o.title, o.capacity, o."instructorName",
+      GROUP BY sd.id, sd."startsAt", sd."endsAt", o.title, o.code, o.capacity, o."instructorName",
                o."linkedClassId", s.id, s.status
       ORDER BY sd."startsAt" ASC`,
     targetYmd, scopeInstructor, userId,
@@ -476,7 +479,7 @@ export async function getSeasonalDatesForStaff(userId: string, role: string, ymd
     dates: rows.map((r) => {
       const p = seoulParts(r.startsAt); const end = seoulParts(r.endsAt);
       return {
-        sessionDateId: r.id, offeringTitle: r.offeringTitle,
+        sessionDateId: r.id, offeringTitle: offeringTitleWithFrequency({ title: r.offeringTitle, code: r.offeringCode }),
         dateLabel: p.dateLabel, dayLabel: p.dayLabel, startTime: p.timeLabel, endTime: end.timeLabel,
         capacity: r.capacity == null ? null : Number(r.capacity),
         instructorName: r.instructorName ?? null,

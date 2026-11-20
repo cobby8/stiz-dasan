@@ -15,6 +15,9 @@ import { SeasonalError, type SeasonalWeekday } from "./contracts.ts";
 import type { OfferingPeriodLike } from "./period-pricing";
 // @ts-expect-error -- Node 타입 제거 기반 단위 테스트는 런타임 확장자를 요구한다.
 import { isPeriodClosed } from "./period-pricing.ts";
+// 반 이름의 횟수 빼기 규칙(«반 = 교시 하나» 묶음과 같은 함수 · 2026-11-19)
+// @ts-expect-error -- Node 타입 제거 기반 단위 테스트는 런타임 확장자를 요구한다.
+import { offeringBaseTitle } from "./offering-groups.ts";
 
 // kstDow 결과(0=일 … 6=토)를 요일 키로
 const WEEKDAY_BY_DOW: readonly SeasonalWeekday[] = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
@@ -35,10 +38,12 @@ export function weekdaysFromDates(dates: readonly string[]): SeasonalWeekday[] {
   return WEEKDAY_ORDER.filter((weekday) => found.has(weekday));
 }
 
-/** 반 이름에서 «주N회»를 뺀 이름. 예: "슈팅 주2회" → "슈팅". 다 지워지면 원래 이름. */
+/**
+ * 반 이름에서 «주N회»를 뺀 이름. 예: "슈팅 주2회" → "슈팅". 다 지워지면 원래 이름.
+ * «매일(주5회)»도 통째로 뺀다(2026-11-19 — 예전엔 «매일( )»이 남았다). 규칙은 offering-groups 한 곳.
+ */
 export function stripWeeklyFrequency(title: string): string {
-  const stripped = title.replace(/\s*주\s*\d+\s*회\s*/g, " ").replace(/\s+/g, " ").trim();
-  return stripped || title.trim();
+  return offeringBaseTitle(title);
 }
 
 /**
@@ -330,4 +335,19 @@ export function fullDateKeysFromOccupancy(
   if (capacity === null || capacity === undefined) return [];
   const keys = onlyDates ? [...new Set(onlyDates)] : [...occupancy.keys()];
   return keys.filter((ymd) => (occupancy.get(ymd) ?? 0) >= capacity).sort();
+}
+
+/**
+ * 공개 화면 «남은 자리» 3단계용 — 같은 운영 반(묶음) 인원표에서 «가장 찬 날짜»의 인원(2026-11-19 검수).
+ *   서버 대기 판정(정원 ≤ 그날 인원 → 대기)과 같은 인원표(countOccupancyByDate)를 쓰므로,
+ *   이 값으로 단계를 정하면 «여유인데 대기»가 생기지 않는다. 숫자는 화면에 내보내지 않는다(단계만).
+ *   fromYmd 를 주면 그날 이후 날짜만 본다(날짜별 정원 시즌 — 지나간 날의 마감은 신청에 영향이 없다).
+ */
+export function peakOccupancy(occupancy: ReadonlyMap<string, number>, fromYmd?: string): number {
+  let peak = 0;
+  for (const [ymd, count] of occupancy) {
+    if (fromYmd && ymd < fromYmd) continue;
+    if (count > peak) peak = count;
+  }
+  return peak;
 }

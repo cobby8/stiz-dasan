@@ -166,7 +166,8 @@ test("특강 반 담당 선생님은 ID 직접 입력 대신 관리자 선택 �
   assert.match(adminClient, /todayDateInputValue\(\)/);
   assert.match(adminClient, />오늘 출석</);
   assert.match(adminClient, /groupOperationalClasses/);
-  assert.match(adminClient, /주 n회 정보는 수강료 계산용입니다/);
+  // 2026-11-19 원장 «반 이름은 하나, 횟수는 학생이 고르는 옵션» — 안내 문구 갱신
+  assert.match(adminClient, /주 몇 회는 신청할 때 학생이 고르는 옵션입니다/);
   assert.match(adminClient, /요일별 운영/);
   assert.match(adminClient, /수강료 계산 규칙/);
   assert.match(adminRoute, /function updateOperationalSlotInstructor/);

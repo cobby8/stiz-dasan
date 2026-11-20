@@ -27,7 +27,8 @@ test("seasonal planning and public UI still handle unspecified capacity defensiv
   assert.match(planning, /capacity: number \| null/);
   assert.match(planning, /offering\.capacity !== null &&/);
   assert.match(types, /seatLevel: SeatLevel \| null/);
-  assert.match(detail, /item\.capacity === null/);
+  // 2026-11-19: 상세 카드는 교시 묶음 기준 남은 자리(group.seat)
+  assert.match(detail, /group\.seat\.capacity === null/);
   assert.match(apply, /function isFull\(item: SeasonalClass\)/);
   assert.match(apply, /function remainingText\(item: SeasonalClass\)/);
   assert.match(list, /hasOpenCapacity/);

@@ -14,7 +14,9 @@ import { kstLabel } from "@/lib/datetime/kst";
 import { askConfirm, showNotice } from "@/components/ui/feedback";
 // 기간 선택·날짜별 선택(2026-11-18) — 표시 문구·가격 계산은 공용 부품(서버와 같은 함수)
 import { describeApplicationSelection, isDateModeApplication, isLateJoinApplication, isTuitionReduced, kstDateTimeParts, parseKstDateTime, shortDateLabel, weekdaysFromDates } from "@/lib/seasonal/admin-period-rules";
-import { APPLICANT_TYPE_LABEL, applicantTypeLabel as applicantTypeName, periodPriceSummary, resolvePeriodPrice } from "@/lib/seasonal/period-pricing";
+import { APPLICANT_TYPE_LABEL, applicantTypeLabel as applicantTypeName, offeringWeeklyFrequency, periodPriceSummary, resolvePeriodPrice, weeklyFrequencyLabel } from "@/lib/seasonal/period-pricing";
+// «반 = 교시 하나»(2026-11-19 원장) — 반 이름에서 횟수를 빼는 규칙은 공개 화면·서버와 같은 함수 하나
+import { offeringBaseTitle } from "@/lib/seasonal/offering-groups";
 import { referralSourceLabel } from "@/lib/enrollment/referralSources";
 import { toKstYmd } from "@/lib/datetime/kst";
 
@@ -329,6 +331,8 @@ type OperationalClassGroup = {
   offerings: SeasonalClass[];
   slots: OperationalSlot[];
   pricingRules: Array<{ key: string; label: string; price: number; newPrice?: number | null; existingPrice?: number | null; shuttleFee?: number | null }>;
+  /** 반이 둘 이상인데 이름·코드 어디에도 «주N회»가 없는 반이 있다 → 그 반은 신청 화면에서 고를 수 없다(관리자 경고) */
+  missingFrequency: boolean;
   capacity: number;
   confirmedTotal: number;
   heldTotal: number;
@@ -462,11 +466,10 @@ function assignmentPriceFor(application: Application, offering?: SeasonalClass) 
   return offering.price ?? 0;
 }
 
+// 반 이름 «주N회» 또는 코드 끝 «-N» — 공개 신청·서버와 같은 함수 하나(반 이름에서 횟수를 빼도 코드로 안다 · 2026-11-19)
 function seasonalOfferingFrequency(offering?: Pick<SeasonalClass, "name" | "code"> | null) {
   if (!offering) return null;
-  const matched = `${offering.name ?? ""} ${offering.code ?? ""}`.match(/주\s*(\d+)\s*회|-(\d)(?:\D|$)/i);
-  const value = matched ? Number(matched[1] ?? matched[2]) : NaN;
-  return Number.isInteger(value) && value > 0 ? value : null;
+  return offeringWeeklyFrequency({ title: offering.name, code: offering.code });
 }
 
 function operationalClassKey(offering: SeasonalClass) {
@@ -477,8 +480,9 @@ function operationalGroupKey(offering: SeasonalClass) {
   return offering.linkedClassId ? `class:${offering.linkedClassId}` : `name:${compactOperationalClassName(offering.name)}`;
 }
 
+// 운영 반(교시) 이름 «초등 고학년» — «주2회»·«매일(주5회)»를 뺀 이름(예전엔 «매일(»이 남았다)
 function compactOperationalClassName(name: string) {
-  return name.replace(/\s*주\s*\d+\s*회.*$/u, "").trim() || name;
+  return offeringBaseTitle(name);
 }
 
 function operationalOfferingOptions(offerings: SeasonalClass[]) {
@@ -613,7 +617,8 @@ function groupOperationalClasses(offerings: SeasonalClass[], coaches: CoachOptio
       const frequency = seasonalOfferingFrequency(offering);
       return {
         key: offering.id,
-        label: frequency ? `주 ${frequency}회` : compactOperationalClassName(offering.name),
+        // «주2회»·«매일(주5회)» — 공개 화면 횟수 버튼과 같은 이름. 횟수를 못 읽으면 반 이름 그대로
+        label: frequency ? weeklyFrequencyLabel(frequency) : offering.name,
         price: offering.price,
         newPrice: offering.newApplicantPrice,
         existingPrice: offering.existingApplicantPrice,
@@ -628,6 +633,7 @@ function groupOperationalClasses(offerings: SeasonalClass[], coaches: CoachOptio
       offerings: sortedOfferings,
       slots,
       pricingRules,
+      missingFrequency: sortedOfferings.length > 1 && sortedOfferings.some((offering) => seasonalOfferingFrequency(offering) === null),
       capacity: baseClass.capacity,
       confirmedTotal: firstNumber(stats.confirmedTotal, sortedOfferings.reduce((sum, offering) => sum + (offering.confirmedCount ?? 0), 0)),
       heldTotal: firstNumber(stats.heldTotal),
@@ -709,8 +715,23 @@ function parseClassParts(name: string): { base: string; freq: string | null } {
   const raw = name || "";
   const m = raw.match(/주\s*(\d+)\s*회/);
   const freq = m ? `주${m[1]}회` : null;
-  const base = raw.replace(/주\s*\d+\s*회/g, "").replace(/\s{2,}/g, " ").trim() || raw;
+  // «매일(주5회)»도 통째로 뺀다(예전엔 «매일()»이 남았다) — 공용 규칙 하나
+  const base = offeringBaseTitle(raw);
   return { base, freq };
+}
+
+/**
+ * 신청 상세의 반 표시 «초등 고학년 · 주2회»(2026-11-19 원장 «반 이름은 하나, 횟수는 옵션»).
+ * 기간이 붙어 있으면 뒤에 둔다 «초등 고학년 · 주2회 (4주)». 횟수가 없으면(날짜 선택 등) 원래 이름 그대로.
+ */
+function classDisplayName(name: string): string {
+  const { base, freq } = parseClassParts(name);
+  if (!freq) return name;
+  // 횟수 표기는 공용 이름표 하나(주5회 = «매일(주5회)» · 2026-11-19 검수). 이름에 이미 «매일»이 있으면 «주5회»만 붙여 겹치지 않게
+  const count = Number(freq.replace(/\D/g, ""));
+  const freqLabel = /매일/.test(base) ? freq : weeklyFrequencyLabel(count);
+  const tail = base.match(/^(.*?)(\s+\(.+\))$/);
+  return tail ? `${tail[1]} · ${freqLabel}${tail[2]}` : `${base} · ${freqLabel}`;
 }
 // 한 신청의 반 이름·횟수 목록(중복 제거). 신청이 여러 반이면 각각 표시/필터에 쓴다.
 function applicationClassInfo(items: { className: string }[]): { bases: string[]; freqs: string[] } {
@@ -1607,8 +1628,14 @@ function SeasonsView({
                           {group.baseClass.targetGrade || "전체 학년"} · {group.baseClass.location || selected.branch || "장소 미정"} · 운영 요일 {activeSlots || "미등록"}개
                         </p>
                         <p className="mt-2 text-xs text-[var(--color-academy-muted)]">
-                          주 n회 정보는 수강료 계산용입니다. 실제 반은 이 운영반 하나로 관리합니다.
+                          반 이름은 하나({group.name}), 주 몇 회는 신청할 때 학생이 고르는 옵션입니다. 횟수별 수강료는 오른쪽에서 고칩니다.
                         </p>
+                        {/* 횟수 미설정 — 이름·코드 어디에도 «주N회»가 없는 반은 신청 화면에서 고를 수 없다 */}
+                        {group.missingFrequency && (
+                          <p role="alert" className="mt-2 rounded-md bg-[var(--color-academy-warning-soft)] px-2 py-1 text-xs font-medium text-[var(--color-academy-warning)]">
+                            횟수 미설정: {group.offerings.filter((offering) => seasonalOfferingFrequency(offering) === null).map((offering) => offering.name).join(", ")} — 반 코드 끝에 «-2»처럼 횟수를 넣어 주세요.
+                          </p>
+                        )}
                       </div>
                       <div className="grid gap-2 sm:grid-cols-[120px_auto] xl:min-w-[440px]">
                         <div className="rounded-lg bg-[var(--color-academy-soft)] px-3 py-2 text-right tabular-nums">
@@ -1669,9 +1696,16 @@ function SeasonsView({
                         <div className="mt-2 space-y-2">
                           {group.pricingRules.map((rule) => (
                             <div key={rule.key} className="rounded-lg bg-white px-3 py-2 text-sm tabular-nums">
-                              <div className="flex items-center justify-between">
+                              <div className="flex items-center justify-between gap-2">
                                 <span className="font-medium">{rule.label}</span>
-                                {group.baseClass.shuttleAvailable && <span className="text-xs text-[var(--color-academy-muted)]">셔틀 +{(rule.shuttleFee ?? 0).toLocaleString()}원</span>}
+                                <span className="flex items-center gap-2">
+                                  {group.baseClass.shuttleAvailable && <span className="text-xs text-[var(--color-academy-muted)]">셔틀 +{(rule.shuttleFee ?? 0).toLocaleString()}원</span>}
+                                  {/* 이 횟수 반의 편집(가격·기간별 수강료·코드) — 지금 반 편집 창을 그대로 연다 */}
+                                  {(() => {
+                                    const target = group.offerings.find((offering) => offering.id === rule.key);
+                                    return target ? <button type="button" onClick={() => onEditClass(target)} aria-label={`${group.name} ${rule.label} 편집`} className="academy-button-secondary academy-button-sm">편집</button> : null;
+                                  })()}
+                                </span>
                               </div>
                               <div className="mt-1 flex items-center justify-between gap-3 text-xs">
                                 <span className="text-[var(--color-academy-ink)]">신입생 {(rule.newPrice ?? rule.price).toLocaleString()}원</span>
@@ -2621,7 +2655,7 @@ function ApplicationItemCard({
   return <article className="rounded-2xl border border-[var(--color-academy-line)] p-4" aria-busy={updating}>
     <div className="flex items-start justify-between gap-3">
       <div>
-        <p className="font-semibold text-[var(--color-academy-ink)]">{item.className}</p>
+        <p className="font-semibold text-[var(--color-academy-ink)]">{classDisplayName(item.className)}</p>
         <p className="mt-1 text-xs tabular-nums text-[var(--color-academy-muted)]">{item.scheduleLabel || "일정 미정"} · {(item.amount ?? 0).toLocaleString()}원</p>
         <ItemPriceBreakdown item={item} />
         {item.waitlistOrder && <p className="mt-1 text-xs tabular-nums text-[var(--color-academy-warning)]">대기 {item.waitlistOrder}번</p>}

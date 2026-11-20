@@ -41,7 +41,8 @@ export default async function SimulatorPage() {
     const allSlots = buildMergedSlots(scheduleData.slots, scheduleData.overrides, scheduleData.customSlots);
 
     // 프로그램 정보 (이름 매칭용)
-    const programList = (programs as any[]).map((p) => ({ id: p.id, name: p.name }));
+    //   방학특강 전용 프로그램은 뺀다(2026-11-19 원장 — /programs·홈·시간표와 같은 seasonalOnly 표식)
+    const programList = (programs as any[]).filter((p) => !p.seasonalOnly).map((p) => ({ id: p.id, name: p.name }));
 
     return (
         <PublicPageLayout>

@@ -41,10 +41,16 @@ const getCachedPrograms = unstable_cache(
     try {
       const rows = await prisma.$queryRawUnsafe<any[]>(
         // description 추가: 프로그램 설명을 시스템 프롬프트에 포함시키기 위함
-        `SELECT id, name, description, "targetAge", days, "weeklyFrequency",
-                price, "priceWeek1", "priceWeek2", "priceWeek3",
-                "priceDaily", "shuttleFeeOverride"
-         FROM "Program" ORDER BY "order" ASC`
+        // 정규반 안내만(2026-11-19 원장): 숨긴(삭제) 프로그램과 방학특강 전용 프로그램은 뺀다.
+        //   특강 전용 = 연결 반에 특강 반(dayOfWeek='Seasonal')이 있고 숨김(Archived)을 뺀 나머지가 모두 특강 반 — getPrograms 의 seasonalOnly 와 같은 식
+        `SELECT p.id, p.name, p.description, p."targetAge", p.days, p."weeklyFrequency",
+                p.price, p."priceWeek1", p."priceWeek2", p."priceWeek3",
+                p."priceDaily", p."shuttleFeeOverride"
+         FROM "Program" p
+         WHERE p."deletedAt" IS NULL
+           AND NOT (EXISTS (SELECT 1 FROM "Class" c WHERE c."programId" = p.id AND c."dayOfWeek" = 'Seasonal')
+                    AND NOT EXISTS (SELECT 1 FROM "Class" c WHERE c."programId" = p.id AND c."dayOfWeek" NOT IN ('Seasonal', 'Archived')))
+         ORDER BY p."order" ASC`
       );
       // 토큰 절약을 위해 필요한 필드만 반환
       return rows.map((r: any) => ({
@@ -142,9 +148,11 @@ const getCachedClasses = unstable_cache(
   async () => {
     try {
       const rows = await prisma.$queryRawUnsafe<any[]>(
+        // 정규반만 — 특강 반(Seasonal)·숨긴 반(Archived)은 챗봇 안내에서 뺀다(2026-11-19 원장)
         `SELECT c.id, c."programId", c.name, c."dayOfWeek", c."startTime", c."endTime",
                 c.location, c.capacity
          FROM "Class" c
+         WHERE c."dayOfWeek" NOT IN ('Seasonal', 'Archived')
          ORDER BY c."programId", c."dayOfWeek", c."startTime" ASC`
       );
       return rows.map((r: any) => ({

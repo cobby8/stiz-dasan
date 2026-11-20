@@ -8,6 +8,7 @@ import {
   datesFullMessage,
   fullDateKeysFromOccupancy,
   itemTitleSnapshot,
+  peakOccupancy,
   occupiedDateKeys,
   pickOfferingPeriod,
   stripWeeklyFrequency,
@@ -19,6 +20,8 @@ import {
 import { SeasonalError } from "./contracts.ts";
 // @ts-expect-error -- Node 타입 제거 기반 단위 테스트는 런타임 확장자를 요구한다.
 import { countOccupancyByDate } from "./attendance-rule.ts";
+// @ts-expect-error -- Node 타입 제거 기반 단위 테스트는 런타임 확장자를 요구한다.
+import { seatLevel } from "../seats/seatLevel.ts";
 
 // 2027-01-04 = 월요일. 회차 시각은 KST 09:30 = UTC 00:30.
 const session = (ymd: string, id = ymd) => ({ id, startsAt: `${ymd}T00:30:00.000Z` });
@@ -157,6 +160,24 @@ test("날짜별 정원 — 차지할 날짜 중 정원 이상인 날만, 정원 
   assert.deepEqual(fullDateKeysFromOccupancy(occupancy, null, ["2027-01-04"]), []);
   // 날짜를 안 주면 전체 날짜에서 찾는다(공개 화면 «마감» 표시용)
   assert.ok(fullDateKeysFromOccupancy(occupancy, 2).includes("2027-01-04"));
+});
+
+test("묶음 남은 자리(2026-11-19 검수) — 정원 12, 주2회 4·주3회 4·매일 4명이 같은 요일이면 «마감»(서버 대기 판정과 같은 인원표)", () => {
+  // 반 하나씩 세면 4명뿐이라 «여유»로 보였지만, 서버는 묶음 전체(12명)로 대기 판정한다
+  const twice = Array.from({ length: 4 }, () => ({ selectedWeekdays: ["MON", "WED"] }));
+  const thrice = Array.from({ length: 4 }, () => ({ selectedWeekdays: ["MON", "WED", "FRI"] }));
+  const daily = Array.from({ length: 4 }, () => ({ selectedWeekdays: [] }));
+  const occupancy = countOccupancyByDate([...twice, ...thrice, ...daily], JAN);
+  const peak = peakOccupancy(occupancy);
+  assert.equal(peak, 12, "월·수는 12명 모두 나온다");
+  assert.equal(seatLevel(12 - peak), "FULL");
+  // 서버 대기 판정(정원 이상인 날짜)과 같은 결과
+  assert.ok(fullDateKeysFromOccupancy(occupancy, 12).includes("2027-01-04"));
+  // 금요일만 보면 8명 — 단계는 가장 찬 날 기준이라 여전히 마감
+  assert.equal(occupancy.get("2027-01-08"), 8);
+  // 기준 날짜 이후만(날짜별 정원 시즌): 지나간 날은 빼고 본다
+  assert.equal(peakOccupancy(new Map([["2027-01-04", 12], ["2027-01-29", 3]]), "2027-01-10"), 3);
+  assert.equal(peakOccupancy(new Map()), 0);
 });
 
 test("안내 문구 — «1월 12일(화), 1월 14일(목)은 정원이 찼습니다. …»", () => {
