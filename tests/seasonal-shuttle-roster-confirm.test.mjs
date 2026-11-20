@@ -100,7 +100,8 @@ test("★R-7① 전원을 명단에서 빼도 폴백이 되살아나지 않는�
     // 확정 여부는 «확정본이 있는 시즌 목록»(제외 행 포함)으로 판정한다 — 보이는 행이 아니다.
     assert.match(fn, /confirmedSeasonIds\(seasonId\)/);
     // 시즌을 지정하면 그 시즌 확정본을 그대로 돌려준다(비어도 폴백으로 새지 않는다).
-    assert.match(fn, /if \(seasonId\) return confirmedRows;/);
+    // (2026-11-20 속도: 확정 명단을 바로 돌려주는 모양으로 바뀜 — 뜻은 같다)
+    assert.match(fn, /if \(seasonId\) return confirmedSeasonRoster\(confirmedSeasons\);/);
     // 확정한 시즌은 폴백에서 뺀다 — 한 시즌 안에서 확정본과 원본을 섞지 않는다.
     assert.match(fn, /fallbackSeasonRoster\(null, confirmedSeasons\)/);
 });
