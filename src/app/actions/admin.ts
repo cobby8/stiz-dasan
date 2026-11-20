@@ -1246,7 +1246,9 @@ export async function enrollStudent(studentId: string, classId: string) {
  * - BLOCKED_REQUESTS: 청구서·정산·반영 처리가 걸린 신청이 있어 막았다 — «수강 변경 신청»에서 먼저 처리
  */
 export type EnrollmentStatusChangeResult =
-    | { ok: true; cleanup: EnrollmentEndCleanupSummary; /** 복귀를 예약만 했을 때 그 날짜(상태는 아직 휴원) */ scheduledFrom?: string }
+    | { ok: true; cleanup: EnrollmentEndCleanupSummary;
+        /** 복귀·퇴원을 예약만 했을 때 그 날짜(상태는 아직 그대로) */ scheduledFrom?: string;
+        /** 예약한 종류 — 복귀(RESUME) 또는 퇴원(WITHDRAW) */ scheduledKind?: "RESUME" | "WITHDRAW" }
     | { ok: false; code: "OPEN_REQUESTS" | "BLOCKED_REQUESTS"; message: string; requests: OpenRequestView[] };
 
 export async function updateEnrollmentStatus(
@@ -1265,8 +1267,11 @@ export async function updateEnrollmentStatus(
     if (effectiveFrom > todayKst()) {
         // 2026-11-17 원장 신고 «휴원 인원을 복귀로 돌렸는데 복귀 시작일을 지정할 수 없다»:
         // 휴원 → 수강 중만 앞날을 받는다. 지금 상태는 바꾸지 않고 «승인된 복귀 예약»을 남기면 그날 적용일 처리가 수강 중으로 바꾼다.
-        if (status !== "ACTIVE") throw new Error("미래 효력일은 예약 변경으로 신청해 주세요.");
-        const scheduled = await scheduleEnrollmentResume(enrollmentId, effectiveFrom, change?.reason, admin.appUserId);
+        // 2026-11-20 원장 지시 «퇴원 예약 기능 만들기»: 수강 종료(WITHDRAWN)도 앞날을 받는다 — 그날 적용일 처리가 수강 종료로 바꾼다.
+        if (status !== "ACTIVE" && status !== "WITHDRAWN") throw new Error("휴원은 오늘 이전 날짜로만 바꿀 수 있습니다. 앞날 휴원은 «수강 변경 신청»으로 받아 주세요.");
+        const scheduled = status === "WITHDRAWN"
+            ? await scheduleEnrollmentWithdraw(enrollmentId, effectiveFrom, change?.reason, admin.appUserId)
+            : await scheduleEnrollmentResume(enrollmentId, effectiveFrom, change?.reason, admin.appUserId);
         if (scheduled.ok) {
             revalidatePath("/admin/students");
             revalidatePath("/admin/enrollment-changes");
@@ -1445,7 +1450,56 @@ async function scheduleEnrollmentResume(
             before.studentId, enrollmentId, before.classId, resolved.resumeFrom,
             reason?.trim().slice(0, 500) || "관리자 복귀 예약", adminUserId,
         );
-        return { ok: true, cleanup: emptyCleanupSummary(), scheduledFrom: resolved.resumeFrom };
+        return { ok: true, cleanup: emptyCleanupSummary(), scheduledFrom: resolved.resumeFrom, scheduledKind: "RESUME" };
+    }, { timeout: 30_000 });
+}
+
+/**
+ * 수강 종료(퇴원)를 앞날로 예약한다(2026-11-20 원장 지시 «퇴원 예약 기능 만들기»).
+ * 지금 상태(수강 중·휴원)는 그대로 두고 «승인된 퇴원 신청»을 남긴다 — 그날 적용일 처리(applyDueEnrollmentChangesWithSummary)가
+ * 학부모 퇴원 신청과 똑같이 수강 종료로 바꾸고, 그 반의 효력일 이후 결석·보강권도 정리한다.
+ * 효력일 = 더는 안 나오는 첫날(마지막 수업 다음 날). 내일~3개월 안만 받는다.
+ */
+async function scheduleEnrollmentWithdraw(
+    enrollmentId: string, effectiveFrom: string, reason: string | undefined, adminUserId: string,
+): Promise<EnrollmentStatusChangeResult> {
+    // 날짜 범위 검사는 복귀 예약과 같은 함수(오늘 이후·3개월 이내)를 쓰고, 안내 문구만 퇴원으로 바꾼다
+    const resolved = resolveResumeDate({ requested: effectiveFrom, today: todayKst() });
+    if (!resolved.ok) {
+        const message = resolved.error === "RESUME_DATE_TOO_FAR"
+            ? "수강 종료 예약은 3개월 이내 날짜로 골라 주세요."
+            : "수강 종료 예약일을 다시 골라 주세요.";
+        return { ok: false, code: "BLOCKED_REQUESTS", message, requests: [] };
+    }
+    return prisma.$transaction(async (tx): Promise<EnrollmentStatusChangeResult> => {
+        // 잠금 순서는 즉시 변경·복귀 예약과 같다: 청구 정산 전역 잠금 → 처리 중 신청 → 수강
+        await lockCompensation(tx);
+        const openRequests = await readOpenChangeRequestsForUpdate(tx, enrollmentId);
+        const [before] = await tx.$queryRawUnsafe<Array<{ studentId: string; classId: string; status: string }>>(
+            `SELECT e."studentId", e."classId", e.status FROM "Enrollment" e WHERE e.id = $1 FOR UPDATE OF e`, enrollmentId,
+        );
+        if (!before) throw new Error("수강 등록 정보를 찾을 수 없습니다.");
+        if (before.status !== "ACTIVE" && before.status !== "PAUSED") {
+            return { ok: false, code: "BLOCKED_REQUESTS", message: "수강 중이거나 휴원 중인 반만 수강 종료를 예약할 수 있습니다.", requests: [] };
+        }
+        // 관리자가 앞서 예약해 둔 퇴원뿐이면 날짜를 바꾸는 것이다 — 옛 예약을 닫고 새로 넣는다.
+        // 학부모 신청·복귀 예약 등 다른 건이 섞여 있으면 사람이 먼저 정리한다(복귀 예약과 같은 원칙).
+        const booked = await adminBookedChanges(tx, openRequests, "WITHDRAW");
+        if (booked.length !== openRequests.length) {
+            return { ok: false, code: "BLOCKED_REQUESTS", message: "이 반에 처리 중인 신청(또는 복귀 예약)이 있어 수강 종료를 예약하지 않았습니다. «수강 변경 신청»에서 먼저 처리해 주세요.", requests: openRequestViews(openRequests) };
+        }
+        await supersedeChangeRequests(tx, booked, {
+            enrollmentId, actorUserId: adminUserId, note: `관리자 수강 종료 예약 날짜 변경(${todayKst()})으로 정리`, confirmed: true,
+        });
+        await tx.$executeRawUnsafe(
+            `INSERT INTO "EnrollmentChangeRequest" (
+                id, "studentId", "enrollmentId", "fromClassId", kind, "effectiveFrom", reason,
+                status, "requestedByUserId", "decidedByUserId", "decidedAt", "createdAt", "updatedAt"
+            ) VALUES (gen_random_uuid()::text, $1, $2, $3, 'WITHDRAW', $4::date, $5, 'APPROVED', $6, $6, NOW(), NOW(), NOW())`,
+            before.studentId, enrollmentId, before.classId, resolved.resumeFrom,
+            reason?.trim().slice(0, 500) || "관리자 수강 종료 예약", adminUserId,
+        );
+        return { ok: true, cleanup: emptyCleanupSummary(), scheduledFrom: resolved.resumeFrom, scheduledKind: "WITHDRAW" };
     }, { timeout: 30_000 });
 }
 
@@ -1454,7 +1508,16 @@ async function scheduleEnrollmentResume(
  * 복귀(RESUME)·승인됨·청구/정산/반영 기록 없음 + 신청자 = 승인자(학부모가 낸 신청은 승인자가 다르다).
  */
 async function adminBookedResumes(tx: CompensationTransaction, openRequests: Awaited<ReturnType<typeof readOpenChangeRequestsForUpdate>>) {
-    const candidates = openRequests.filter((r) => r.kind === "RESUME" && r.status === "APPROVED" && !r.invoiced && !r.settled && !r.linkedCommand);
+    return adminBookedChanges(tx, openRequests, "RESUME");
+}
+
+/** 처리 중 신청 가운데 «관리자가 학생 상세에서 직접 예약한 그 종류(복귀·퇴원)»만 고른다 — 기준은 위와 같다. */
+async function adminBookedChanges(
+    tx: CompensationTransaction,
+    openRequests: Awaited<ReturnType<typeof readOpenChangeRequestsForUpdate>>,
+    kind: "RESUME" | "WITHDRAW",
+) {
+    const candidates = openRequests.filter((r) => r.kind === kind && r.status === "APPROVED" && !r.invoiced && !r.settled && !r.linkedCommand);
     if (!candidates.length) return [];
     const own = await tx.$queryRawUnsafe<Array<{ id: string }>>(
         `SELECT id FROM "EnrollmentChangeRequest" WHERE id = ANY($1::text[]) AND "requestedByUserId" = "decidedByUserId"`,
@@ -1480,6 +1543,32 @@ export async function cancelScheduledResume(enrollmentId: string): Promise<{ ok:
             enrollmentId, actorUserId: admin.appUserId, note: `관리자 복귀 예약 취소(${todayKst()})`, confirmed: true,
         });
         return { ok: true, message: "복귀 예약을 취소했습니다. 휴원 상태는 그대로입니다.", studentId: enrollment.studentId };
+    }, { timeout: 30_000 });
+    if (result.ok) {
+        revalidatePath("/admin/students");
+        if (result.studentId) revalidatePath(`/admin/students/${result.studentId}`);
+        revalidatePath("/admin/enrollment-changes");
+        revalidateStudentAdminCaches();
+    }
+    return { ok: result.ok, message: result.message };
+}
+
+/** 예약해 둔 수강 종료를 취소한다(지금 상태는 그대로). 관리자가 직접 예약한 퇴원만 닫는다 — 학부모 퇴원 신청은 «수강 변경 신청»에서 처리한다. */
+export async function cancelScheduledWithdraw(enrollmentId: string): Promise<{ ok: boolean; message: string }> {
+    const admin = await requireAdmin();
+    const result = await prisma.$transaction(async (tx) => {
+        await lockCompensation(tx);
+        const openRequests = await readOpenChangeRequestsForUpdate(tx, enrollmentId);
+        const [enrollment] = await tx.$queryRawUnsafe<Array<{ studentId: string }>>(
+            `SELECT e."studentId" FROM "Enrollment" e WHERE e.id = $1 FOR UPDATE OF e`, enrollmentId,
+        );
+        if (!enrollment) return { ok: false, message: "수강 등록 정보를 찾을 수 없습니다.", studentId: null };
+        const booked = await adminBookedChanges(tx, openRequests, "WITHDRAW");
+        if (!booked.length) return { ok: false, message: "취소할 수강 종료 예약이 없습니다. 학부모가 낸 퇴원 신청은 «수강 변경 신청»에서 처리해 주세요.", studentId: null };
+        await supersedeChangeRequests(tx, booked, {
+            enrollmentId, actorUserId: admin.appUserId, note: `관리자 수강 종료 예약 취소(${todayKst()})`, confirmed: true,
+        });
+        return { ok: true, message: "수강 종료 예약을 취소했습니다. 지금 상태는 그대로입니다.", studentId: enrollment.studentId };
     }, { timeout: 30_000 });
     if (result.ok) {
         revalidatePath("/admin/students");

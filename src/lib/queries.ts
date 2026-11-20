@@ -2081,7 +2081,17 @@ export async function getStudentActivity(studentId: string) {
             prisma.$queryRawUnsafe<any[]>(
                 `SELECT e.id, e."classId", e.status, e."startsOn", e."createdAt",
                         c.name AS class_name, c."dayOfWeek", c."startTime", c."endTime",
-                        p.name AS program_name, ${resumeFromSql("e")} AS "resumeFrom"
+                        p.name AS program_name, ${resumeFromSql("e")} AS "resumeFrom",
+                        -- 예약된 수강 종료일(승인·미반영 퇴원 중 가장 이른 날). 관리자 예약이면 «종료 예약 취소»를 보인다(2026-11-20)
+                        (SELECT to_char(MIN(wr."effectiveFrom"), 'YYYY-MM-DD') FROM "EnrollmentChangeRequest" wr
+                          WHERE wr."enrollmentId" = e.id AND wr.kind = 'WITHDRAW' AND wr.status = 'APPROVED' AND wr."appliedAt" IS NULL
+                            AND e.status IN ('ACTIVE','PAUSED')
+                            AND NOT EXISTS (SELECT 1 FROM "OperationsCommand" oc WHERE oc."idempotencyKey" = 'enrollment-change:' || wr.id)) AS "withdrawFrom",
+                        EXISTS (SELECT 1 FROM "EnrollmentChangeRequest" wr
+                          WHERE wr."enrollmentId" = e.id AND wr.kind = 'WITHDRAW' AND wr.status = 'APPROVED' AND wr."appliedAt" IS NULL
+                            AND wr."requestedByUserId" = wr."decidedByUserId"
+                            AND e.status IN ('ACTIVE','PAUSED')
+                            AND NOT EXISTS (SELECT 1 FROM "OperationsCommand" oc WHERE oc."idempotencyKey" = 'enrollment-change:' || wr.id)) AS "withdrawAdminBooked"
                  FROM "Enrollment" e
                  LEFT JOIN "Class" c ON e."classId" = c.id
                  LEFT JOIN "Program" p ON c."programId" = p.id
@@ -2236,6 +2246,9 @@ export async function getStudentActivity(studentId: string) {
                 startsLater: enrollmentStartsLater(e.startsOn ?? e.startson, todayKst()),
                 // 휴원 중인 반에 예약된 복귀일("YYYY-MM-DD") — 없으면 null(2026-11-17 관리자 복귀 예약)
                 resumeFrom: e.resumeFrom ?? e.resumefrom ?? null,
+                // 예약된 수강 종료일("YYYY-MM-DD") — 그날 자동으로 수강 종료된다(2026-11-20 관리자 퇴원 예약)
+                withdrawFrom: e.withdrawFrom ?? e.withdrawfrom ?? null,
+                withdrawAdminBooked: Boolean(e.withdrawAdminBooked ?? e.withdrawadminbooked),
                 createdAt: e.createdAt ?? e.createdat,
                 className: e.class_name,
                 dayOfWeek: e.dayOfWeek ?? e.dayofweek,
