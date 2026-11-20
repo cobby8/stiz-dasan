@@ -21,7 +21,9 @@ import type { LessonTextSaveResult } from "@/components/staff/LessonTextEditor";
 import { retainSessionData } from "@/components/staff/sessionWorkspaceRules";
 import { prepareStaffNavigation, setStaffLiveLessonOpen } from "./staffNavigation";
 import type { StaffSessionDetail, StaffSessionStudent, StaffTodayClass } from "@/lib/staff-session-queries";
-import { isStaleDateKey, STALE_DATE_MESSAGE, staffPreviewDates, staffReloginHref } from "@/lib/staff-session-rules";
+import { blockingFinishedNotice, isStaleDateKey, STALE_DATE_MESSAGE, staffPreviewDates, staffReloginHref } from "@/lib/staff-session-rules";
+// 2026-11-20: 어제 못 끝낸 수업 때문에 시작이 막혔을 때 그 자리에서 끝내는 안내 창
+import { BlockingSessionDialog, type BlockingSession } from "@/components/staff/BlockingSessionDialog";
 import { kstDow, kstLabel } from "@/lib/datetime/kst";
 import { askConfirm, showNotice } from "@/components/ui/feedback";
 // 2026-11-18 뒤로 가기: 창은 «뒤로»로 창만 닫히고, 수업 진행 중에는 홈에서도 «저장하고 나갈까요»를 묻는다
@@ -98,6 +100,8 @@ export default function StaffHomeClient({
   const [dateMoving, startDateMove] = useTransition();
   const [classes, setClasses] = useState(initialClasses);
   const [startTarget, setStartTarget] = useState<StaffTodayClass | null>(null);
+  // 다른 수업 시작을 막고 있는 «이 화면 목록에 없는» 진행 중 수업(어제 못 끝낸 수업 등) — 안내 창을 띄운다
+  const [blocking, setBlocking] = useState<BlockingSession | null>(null);
   const [noticeTarget, setNoticeTarget] = useState<StaffTodayClass | null>(null);
   const [noticeTitle, setNoticeTitle] = useState("");
   const [noticeContent, setNoticeContent] = useState("");
@@ -252,7 +256,7 @@ export default function StaffHomeClient({
   const lessonGuardRef = useRef<HomeLessonGuard | null>(null);
   // 홈의 창(수업 시작·수업 공지·청구 확인)이 열려 있는가 / 방금 닫혔는가 — 닫히는 창의 기록 칸이 빠진 «뒤»에 가드 칸을 넣는다.
   // («수업 시작» 창은 닫히면서 수업 줄이 «수업 중»으로 바뀐다. 창 칸이 빠지기 전에 가드 칸을 넣으면 그 되돌리기가 가드 칸을 빼 버린다)
-  const homeWindowOpen = Boolean(startTarget || noticeTarget || billingTarget);
+  const homeWindowOpen = Boolean(startTarget || noticeTarget || billingTarget || blocking);
   const homeWindowRef = useRef({ open: false, closedAt: -Infinity });
   useEffect(() => {
     if (!liveLessonOpen) return;
@@ -348,11 +352,9 @@ export default function StaffHomeClient({
             setError(result.message);
             return;
           }
-          if ((await askConfirm(`${result.message}\n\n그 수업 화면으로 이동할까요?`))) {
-            router.push(`/staff/sessions/${result.activeSessionId}`);
-          } else {
-            setError(result.message);
-          }
+          // 목록에 없는 수업(어제 못 끝낸 수업 등) — 안내 창에서 «그 수업 종료하기»·«그 수업 화면 열기»를 고른다(2026-11-20).
+          // 예전엔 «그 수업 화면으로 이동할까요?»만 물어, 출결이 다 찍힌 수업도 그 화면까지 가서 끝내야 했다.
+          setBlocking({ sessionId: result.activeSessionId, message: result.message, className: result.activeClassName ?? null, isPast: result.activeIsPast === true });
           return;
         }
         setError(result.message);
@@ -721,6 +723,18 @@ export default function StaffHomeClient({
           {noticeSaved && <button type="button" disabled={pending} onClick={() => { noticeOperation.current = null; try { sessionStorage.removeItem(`staff-notice-operation:${noticeTarget.id}`); } catch {} setNoticeSaved(false); setNoticeUncertain(false); setNoticeResult(""); setNoticeTitle(""); setNoticeContent(""); setError(null); }} className="academy-button-secondary ml-2 mt-3">새 공지 작성</button>}
           <ModalActions pending={pending} onCancel={() => setNoticeTarget(null)} onConfirm={() => sendNotice()} confirmLabel="공지 저장·알림 요청" disabled={noticeSaved || noticeUncertain || !noticeTitle.trim() || !noticeContent.trim()} />
         </Modal>
+      )}
+
+      {blocking && (
+        <BlockingSessionDialog
+          target={blocking}
+          // 닫기만 하면 막힌 이유를 화면에 남긴다(예전의 «이동 안 함»과 같다)
+          onClose={() => { setError(blocking.message); setBlocking(null); }}
+          // 종료 성공 — 창을 닫고 안내 한 줄. 새 수업은 선생님이 다시 «수업 시작»을 눌러 시작한다
+          onFinished={() => { setBlocking(null); setError(null); setFlash(blockingFinishedNotice(blocking.className)); }}
+          onOpenSession={() => router.push(`/staff/sessions/${blocking.sessionId}`)}
+          onNeedsLogin={() => setNeedsLogin(true)}
+        />
       )}
 
       {startTarget && (

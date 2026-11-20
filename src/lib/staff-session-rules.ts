@@ -114,6 +114,121 @@ export function activeSessionNotice(className: string, sessionYmd?: string | nul
   return `${className}${when} 수업이 아직 진행 중입니다. 먼저 끝내 주세요.`;
 }
 
+// ── 수업 종료가 «끝난 줄 알았는데 진행 중»으로 남는 일 막기(2026-11-20 원장 승인) ──────────
+//
+// 사건: 11/19 수업이 종료되지 않은 채 남아, 다음 날 다른 수업 시작이 «먼저 끝내 주세요»로 막혔다.
+//   ① 막힌 자리에서 바로 끝낼 수 있게(정리용 종료) ② 늦은 종료는 리포트를 기본으로 발행하지 않게
+//   ③ 종료 버튼이 아무 말 없이 무시되지 않게 — 세 가지 판정을 화면·서버가 같이 쓴다.
+
+/**
+ * 수업을 종료할 때 리포트를 학부모에게 발행할지.
+ * - 오늘 수업: 화면이 끄지 않았으면 발행한다(값이 없으면 발행 — 기존 규칙 그대로).
+ * - 지난 날짜 수업(늦은 종료): 화면이 «보내기»를 켰을 때(publishReport === true)만 발행한다.
+ *   하루 지난 수업의 리포트가 선생님도 모르게 «발행됨»으로 나가지 않게.
+ * - 오늘 날짜를 모르면(DB 시계를 못 읽음) 지난 날로 단정하지 않고 기존 규칙을 따른다.
+ * 날짜는 인자로 받는다(이 함수는 시계를 보지 않는다). "YYYY-MM-DD" 는 글자 순서가 곧 날짜 순서다.
+ */
+export function shouldPublishOnComplete(input: {
+  sessionYmd: string;
+  todayYmd: string;
+  publishReport?: boolean;
+}): boolean {
+  const sessionYmd = String(input.sessionYmd ?? "").slice(0, 10);
+  const todayYmd = String(input.todayYmd ?? "").slice(0, 10);
+  const late = isKstYmd(sessionYmd) && isKstYmd(todayYmd) && sessionYmd < todayYmd;
+  return late ? input.publishReport === true : input.publishReport !== false;
+}
+
+/** 종료 창을 처음 열 때 «학부모에게 바로 보내기» 체크의 기본값 — 지난 날짜 수업이면 끔, 그 밖은 켬. */
+export function defaultPublishOnComplete(sessionYmd: string, todayYmd: string): boolean {
+  return shouldPublishOnComplete({ sessionYmd, todayYmd });
+}
+
+/** 지난 날짜 수업의 종료 창에서 «바로 보내기» 옆에 보이는 한 줄. */
+export const LATE_COMPLETE_NOTICE = "지난 날짜 수업이라 학부모 알림은 나가지 않습니다.";
+
+/**
+ * «종료 확인»을 눌렀는데 지금은 종료할 수 없을 때 보일 문구 — 종료할 수 있으면 빈 문자열.
+ * 예전엔 이 상태에서 눌러도 아무 반응이 없었다(버튼이 꺼져 있거나 함수가 말없이 끝남).
+ */
+export function finishBlockedMessage(input: {
+  voiceBusy: boolean;
+  memoSaving: boolean;
+  online: boolean;
+  /** 연결 끊김 안내를 이미 한 번 보였는가 — 보인 뒤 다시 누르면 그대로 요청을 보낸다 */
+  offlineWarned?: boolean;
+}): string {
+  if (input.voiceBusy) return "음성 입력을 마친 뒤 다시 눌러 주세요.";
+  if (input.memoSaving) return "메모를 저장하는 중입니다. 잠시 뒤 다시 눌러 주세요.";
+  // 휴대폰의 «연결 끊김» 표시는 틀릴 때가 있다 — 영영 못 끝내지 않게 한 번만 막고, 다시 누르면 보내 본다.
+  if (!input.online && !input.offlineWarned) return OFFLINE_FINISH_MESSAGE;
+  return "";
+}
+
+/** 연결이 끊긴 것으로 보일 때 «종료 확인»을 처음 누르면 보이는 문구(다시 누르면 요청을 보낸다). */
+export const OFFLINE_FINISH_MESSAGE = "인터넷 연결이 끊긴 것 같습니다. 연결을 확인한 뒤 다시 눌러 주세요.";
+
+/** 종료 요청에 이 시간(ms) 넘게 응답이 없으면 «응답이 늦습니다» 안내를 보인다. */
+export const SLOW_RESPONSE_MS = 12_000;
+/** 수업 종료 확인 창 — 응답이 늦을 때. «새로 고침» 버튼과 함께 보인다. */
+export const FINISH_SLOW_MESSAGE = "응답이 늦습니다. 이 화면을 닫지 말고 잠시 기다려 주세요. 계속 멈춰 있으면 새로 고침 뒤 다시 종료해 주세요.";
+/** 막힌 자리 안내 창 — 응답이 늦을 때. 이때부터 «닫기»가 눌린다. */
+export const BLOCKING_SLOW_MESSAGE = "응답이 늦습니다. 닫고 다시 시도할 수 있습니다.";
+
+/** 수업 종료를 서버가 거부한 사유(서버 기록용 짧은 코드). */
+export type CompleteRefusalReason = "GATE" | "NOT_IN_PROGRESS" | "NOT_PAST" | "NOT_STARTER" | "ATTENDANCE_MISSING" | "STATE_CHANGED";
+
+/**
+ * 종료 거부를 서버 기록에 남길 값 — 수업 id·사유 코드·(있으면) 출결 미확인 인원 수만.
+ * 학생 이름 같은 개인정보는 넣지 않는다.
+ */
+export function completeRefusalLog(input: {
+  sessionId: string;
+  reason: CompleteRefusalReason;
+  missingCount?: number;
+}): { sessionId: string; reason: CompleteRefusalReason; missingCount?: number } {
+  const log: { sessionId: string; reason: CompleteRefusalReason; missingCount?: number } = {
+    sessionId: String(input.sessionId ?? "").slice(0, 100),
+    reason: input.reason,
+  };
+  if (typeof input.missingCount === "number" && Number.isFinite(input.missingCount)) log.missingCount = input.missingCount;
+  return log;
+}
+
+/**
+ * 막힌 자리의 «그 수업 종료하기»로 끝낼 수 있는 수업인가 — 본인이 시작한 수업만.
+ * (다른 수업 시작을 막는 기준 = startClassSession 의 «startedByUserId = 본인» 과 같다)
+ */
+export function canFinishBlockingSession(input: { startedByUserId: string | null | undefined; userId: string | null | undefined }): boolean {
+  return Boolean(input.userId) && input.startedByUserId === input.userId;
+}
+
+/**
+ * 정리용 종료(막힌 자리의 «그 수업 종료하기»)를 받을 수업 날짜인가 — 지난 날짜 수업만(2026-11-20 검수 결정).
+ * 오늘 수업을 이 길로 끝내면 학부모 알림·리포트 없이 끝나 버린다 → 오늘·미래 수업은 그 수업 화면에서 끝낸다.
+ * 오늘 날짜를 모르면(빈 값·이상한 값) 안전하게 거부한다. 날짜는 인자로 받는다(시계를 보지 않는다).
+ */
+export function canCleanupFinish(input: { sessionYmd: string | null | undefined; todayYmd: string | null | undefined }): boolean {
+  const sessionYmd = String(input.sessionYmd ?? "").slice(0, 10);
+  const todayYmd = String(input.todayYmd ?? "").slice(0, 10);
+  return isKstYmd(sessionYmd) && isKstYmd(todayYmd) && sessionYmd < todayYmd;
+}
+
+/** 오늘(또는 날짜를 확인하지 못한) 수업을 정리용 종료로 끝내려 할 때. */
+export const BLOCKING_NOT_PAST_MESSAGE = "오늘 수업은 그 수업 화면에서 종료해 주세요.";
+
+/** 막힌 자리 안내 창의 둘째 줄(지난 날짜 수업일 때만 보인다). */
+export const BLOCKING_FINISH_HINT = "지난 날짜 수업이고 출결이 다 확인됐으면 여기서 바로 끝낼 수 있습니다. 학부모 알림과 리포트 발행은 하지 않습니다.";
+/** 그 수업을 본인이 시작하지 않았을 때. */
+export const BLOCKING_NOT_STARTER_MESSAGE = "직접 시작한 수업만 여기서 끝낼 수 있습니다. 그 수업 화면에서 종료해 주세요.";
+/** 종료 요청이 서버에 닿지 못했을 때(연결 끊김 등). */
+export const BLOCKING_FINISH_NETWORK_MESSAGE = "연결이 불안정해 종료하지 못했습니다. 다시 눌러 주세요.";
+/** 정리용 종료가 끝난 뒤 화면에 보일 한 줄. */
+export function blockingFinishedNotice(className: string | null | undefined): string {
+  const name = String(className ?? "").trim();
+  return `${name ? `${name} 수업` : "그 수업"}을 종료했습니다. 이제 수업을 시작할 수 있습니다.`;
+}
+
 // ── b5. 권한·로그인 실패를 화면이 알아듣게 ───────────────────
 
 export type StaffFailureKind = "login" | "forbidden" | "network" | "other";

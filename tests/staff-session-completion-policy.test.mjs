@@ -23,7 +23,8 @@ test("수업 종료 저장 뒤 학부모 알림 실패를 성공 응답과 분�
   const helper = source.slice(source.indexOf("function runAfterResponse"));
   assert.match(helper.slice(0, helper.indexOf("\n}\n")), /after\(async \(\) => \{[\s\S]*?catch \(error\)/);
   // b6: 지난 날짜 수업 종료면 학부모 «수업 종료» 알림을 보내지 않는다.
-  assert.match(source.slice(updateIndex, afterIndex), /if \(shouldNotifyParentsForSession\(String\(session\.date\)\.slice\(0, 10\)\)\) \{/);
+  // 2026-11-20: 정리용 종료(cleanup — 막힌 자리의 «그 수업 종료하기»)는 오늘 수업이어도 보내지 않는다.
+  assert.match(source.slice(updateIndex, afterIndex), /if \(!cleanup && shouldNotifyParentsForSession\(sessionYmd\)\) \{/);
 });
 
 test("출석 알림도 응답 뒤에 보내고, 지난 날짜 수업이면 보내지 않는다", () => {
@@ -109,10 +110,22 @@ test("정규 수업 시작은 오늘(KST)만, 미리 작성은 오늘~14일 뒤�
   // 진행 중 수업 안내에 반 이름·날짜(b6)
   assert.match(start, /message: activeSessionNotice\(active\[0\]\.className, active\[0\]\.date\)/);
   // 출석·메모·종료·시작 취소는 권한 실패를 던지지 않는다(b5)
-  for (const name of ["saveSessionMemo", "saveStaffAttendance", "completeClassSession", "cancelClassSession"]) {
+  for (const name of ["saveSessionMemo", "saveStaffAttendance", "cancelClassSession"]) {
     const fn = source.slice(source.indexOf(`export async function ${name}`));
     assert.match(fn.slice(0, 600), /const gate = await trySessionAccess\(input\.sessionId\);\s*if \(!gate\.ok\) return gate;/, name);
   }
+  // 종료는 2026-11-20 부터 권한 실패도 서버 기록에 «종료 거부(GATE)» 한 줄을 남긴 뒤 같은 결과를 그대로 돌려준다.
+  // 권한 검사가 다른 어떤 조회·검사보다 먼저다(함수 안 첫 문장).
+  // (종료 본체 = completeSessionCore. 공개 completeClassSession·completeBlockingSession 은 이 본체만 부른다)
+  const coreAt = source.indexOf("\nasync function completeSessionCore(");
+  assert.ok(coreAt > 0, "completeSessionCore 를 찾아야 한다");
+  const finish = source.slice(coreAt);
+  const finishBody = finish.slice(finish.indexOf("\n) {") + 4, finish.indexOf("\n}\n", 1));
+  assert.match(
+    finishBody,
+    /^(?:\s*\/\/[^\n]*\n)*\s*const gate = await trySessionAccess\(input\.sessionId\);\s*if \(!gate\.ok\) \{\s*console\.warn\("\[completeClassSession\] 종료 거부", completeRefusalLog\(\{ sessionId: input\.sessionId, reason: "GATE" \}\)\);\s*return gate;\s*\}/,
+    "completeClassSession",
+  );
 });
 
 test("이미 종료된 수업은 재시도해도 성공으로 응답한다", () => {

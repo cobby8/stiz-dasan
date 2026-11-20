@@ -150,7 +150,8 @@ test("종료 창: 이미 쓴 한 줄이 있으면 입력 칸을 또 보이지 �
   assert.match(dialog, /학부모에게 보낼 글: <\/span>\{report\.trim\(\)\}/);
   assert.match(dialog, /onClick=\{\(\) => setEditReport\(true\)\}[^>]*>고치기</);
   // 종료할 때 보내는 값은 그대로(report·publishReport) — 서버의 CASE WHEN $5 THEN $3 처리와 맞물린다
-  assert.match(client, /completeClassSession\(\{\s*sessionId: session\.id,\s*report,\s*publishReport,\s*\}\)/);
+  // 2026-11-20: 발행 체크는 선생님이 만졌을 때만 값으로 보낸다(안 만졌으면 undefined → 서버가 DB 시계로 정한다)
+  assert.match(client, /completeClassSession\(\{\s*sessionId: session\.id,\s*report,\s*(?:\/\/[^\n]*\s*)*publishReport: publishChoice \?\? undefined,\s*\}\)/);
 });
 
 // ── C. 학생 한 명 = 한 줄 ─────────────────────────────────────
