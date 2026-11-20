@@ -1694,27 +1694,37 @@ export const getNotices = cache(async (options?: { limit?: number; offset?: numb
     }
 });
 
+/**
+ * 공지 한 건 — DB 오류를 숨기지 않는다(던진다). 없는 공지만 null.
+ * 공개 공지 상세(저장 화면, ISR)가 쓴다(2026-11-19 속도 10회차): 오류를 null 로 바꾸면 «없는 공지(404)» 화면이
+ * 저장돼 잠깐 동안 진짜 공지가 안 보일 수 있다. 던지면 Next 가 그 그리기를 저장하지 않고 이전 저장본을 계속 준다.
+ */
+export const getNoticeByIdOrThrow = cache(async (id: string) => {
+    const rows = await prisma.$queryRawUnsafe<any[]>(
+        `SELECT id, title, content, "targetType", "targetClassIds",
+                "attachmentsJSON", "isPinned", "createdAt", "updatedAt"
+         FROM "Notice" WHERE id = $1 LIMIT 1`,
+        id
+    );
+    if (!rows[0]) return null;
+    const r = rows[0];
+    return {
+        id: r.id,
+        title: r.title,
+        content: r.content,
+        targetType: r.targetType ?? r.targettype ?? "ALL",
+        targetClassIds: r.targetClassIds ?? r.targetclassids ?? null,
+        attachmentsJSON: r.attachmentsJSON ?? r.attachmentsjson ?? null,
+        isPinned: r.isPinned ?? r.ispinned ?? false,
+        createdAt: r.createdAt ?? r.createdat,
+        updatedAt: r.updatedAt ?? r.updatedat,
+    };
+});
+
+/** 공지 한 건 — 실패하면 null(예전 그대로). 오류를 그대로 받아야 하는 곳은 getNoticeByIdOrThrow */
 export const getNoticeById = cache(async (id: string) => {
     try {
-        const rows = await prisma.$queryRawUnsafe<any[]>(
-            `SELECT id, title, content, "targetType", "targetClassIds",
-                    "attachmentsJSON", "isPinned", "createdAt", "updatedAt"
-             FROM "Notice" WHERE id = $1 LIMIT 1`,
-            id
-        );
-        if (!rows[0]) return null;
-        const r = rows[0];
-        return {
-            id: r.id,
-            title: r.title,
-            content: r.content,
-            targetType: r.targetType ?? r.targettype ?? "ALL",
-            targetClassIds: r.targetClassIds ?? r.targetclassids ?? null,
-            attachmentsJSON: r.attachmentsJSON ?? r.attachmentsjson ?? null,
-            isPinned: r.isPinned ?? r.ispinned ?? false,
-            createdAt: r.createdAt ?? r.createdat,
-            updatedAt: r.updatedAt ?? r.updatedat,
-        };
+        return await getNoticeByIdOrThrow(id);
     } catch (e) {
         console.error("[getNoticeById] failed:", e);
         return null;

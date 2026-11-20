@@ -36,7 +36,7 @@ function loadPage(file, overrides = {}) {
     // 공지 상세가 generateMetadata 용으로 불러온다(메타 자체는 tests/notice-metadata.test.mjs 가 검증)
     if (id === "@/lib/noticeMetadata") return { buildNoticeMetadata: () => ({}) };
     if (id === "@/lib/noticeContent") return { stripHtmlForPreview: (value) => value, toNoticeHtml: (value) => value, isHtmlContent: () => false, isImageAttachment: () => false };
-    if (id === "@/lib/queries") return { getNotices: async () => [notice], getNoticeById: async () => notice, getAcademySettings: async () => ({ contactPhone: "" }) };
+    if (id === "@/lib/queries") return { getNotices: async () => [notice], getNoticeById: async () => notice, getNoticeByIdOrThrow: async () => notice, getAcademySettings: async () => ({ contactPhone: "" }) };
     if (id.startsWith("@/components/") || id === "./GalleryLightboxController") return { default: passthrough };
     if (id.endsWith(".css")) return {};
     return require(id);
@@ -95,7 +95,7 @@ test("공지 목록의 월/일과 모바일 날짜·상세 게시일이 같은 �
 test("과거 공지는 원문을 보존하고 현재 모집 링크와 구분하며 제목으로 마감을 추정하지 않는다", async () => {
   const prior = { ...notice, title: "2025 여름방학 특강 안내", createdAt: "2025-06-30T15:30:00Z", content: '<a href="https://forms.gle/fixture-only">게시 당시 접수 안내</a>' };
   const Detail = loadPage("app/notices/[id]/page.tsx", {
-    "@/lib/queries": { getNoticeById: async () => prior, getAcademySettings: async () => ({}) },
+    "@/lib/queries": { getNoticeById: async () => prior, getNoticeByIdOrThrow: async () => prior, getAcademySettings: async () => ({}) },
   });
   const html = renderToStaticMarkup(await Detail({ params: Promise.resolve({ id: prior.id }) }));
   assert.match(html, /2025년 7월 1일/);

@@ -2681,6 +2681,8 @@ export async function updateNotice(id: string, data: {
     revalidatePath("/admin/notices");
     revalidateNoticeAdminCaches();
     revalidatePath("/notices");
+    // 공개 공지 상세는 저장(ISR) 화면이다(2026-11-19 속도 10회차) — 고친 내용이 바로 보이게 그 주소도 갱신
+    revalidatePath(`/notices/${id}`);
     revalidatePath("/mypage");
     revalidatePath("/");
 }
@@ -2696,6 +2698,8 @@ export async function deleteNotice(id: string) {
     revalidatePath("/admin/notices");
     revalidateNoticeAdminCaches();
     revalidatePath("/notices");
+    // 공개 공지 상세는 저장(ISR) 화면이다 — 지운 공지가 저장본으로 남아 보이지 않게 그 주소도 갱신(속도 10회차)
+    revalidatePath(`/notices/${id}`);
     revalidatePath("/mypage");
     revalidatePath("/");
 }
