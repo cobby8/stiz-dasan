@@ -102,7 +102,8 @@ test("b2 홈·기사님 화면은 화면 복귀 때 날짜가 바뀌었으면 �
   assert.match(home, /isStaleDateKey\((?:dateKey|todayKey)\)\) router\.refresh\(\)/);
   // 새로 불러오면 수업 목록 상태도 새 날짜로 다시 만든다
   assert.match(homePage, /<StaffHomeClient key=\{`\$\{todayKey\}:\$\{dateKey\}`\}/);
-  assert.match(driverClient, /if \(todayKst\(\) !== today\) router\.refresh\(\)/);
+  // 2026-11-20 부터 연결 확인을 거치는 «명단 새로 읽기»(refreshRoster)를 탄다 — 끊긴 채 새로 읽으면 화면이 오류 페이지로 바뀐다
+  assert.match(driverClient, /if \(todayKst\(\) !== today\) void refreshRoster\(false\)/);
   // 운행 중(위치 전송)·순서 편집 중에는 새로 불러오지 않는다
   assert.match(driverClient, /runState === "running" \|\| editing\) return;/);
 });

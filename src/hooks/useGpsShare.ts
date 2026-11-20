@@ -29,7 +29,8 @@ export function useGpsShare(token: string, label?: string) {
   }, [token]);
   const start = useCallback(() => controller.current?.start(), []);
   const stop = useCallback(async () => controller.current?.stop() ?? false, []);
-  return { ...snapshot, mode, nativeRunning: nativeStatus?.token === token && nativeStatus.running,
+  // nativeReady = 앱이 이 운행 열쇠의 «지금 상태»를 한 번이라도 알려 줬나(도착하자마자 시작 요청을 보낼지 판단할 때 쓴다)
+  return { ...snapshot, mode, nativeReady: nativeStatus?.token === token, nativeRunning: nativeStatus?.token === token && nativeStatus.running,
     nativeMessage: nativeStatus?.token === token ? nativeStatus.message : null,
     isOn: snapshot.state === "active" || snapshot.state === "requesting", start, stop };
 }

@@ -373,3 +373,34 @@ export function maskStaffMonthlyFeeAmount<T extends { amount: number | null; sta
   if (summary.status === "UNPAID" || summary.status === "PENDING_CONFIRMATION" || summary.status === "UNISSUED") return summary;
   return { ...summary, amount: null };
 }
+
+/**
+ * 안드로이드 스토어 앱의 «운행 시작 한 번» 길(2026-11-20 원장 지시).
+ * 셔틀 명단의 «운행 시작»을 눌러 온 운행 화면은 주소에 같은 표시(?start=1)를 달고 열려, 도착하자마자 위치 공유 동의 창을 띄운다.
+ * 예전에는 운행 화면에서 «운행 시작»을 한 번 더 눌러야 해서, 첫 번째만 누르고 체크만 하면 위치가 나가지 않았다.
+ */
+export function driverAppRunHref(token: string): string {
+  return `/driver/${token}?${DRIVER_START_PARAM}=1`;
+}
+
+/**
+ * 운행 화면에 도착하자마자 위치 공유 시작을 요청할지(순수 함수).
+ *  - 앱(네이티브) 위치 공유에서만: 시작 요청은 앱의 동의 창을 띄울 뿐이고, 동의·권한 허용은 기사님이 직접 누른다.
+ *  - 앱이 «지금 운행 상태»를 한 번 알려 준 뒤에만(nativeReady): 이미 운행 중인데 동의 창을 또 띄우지 않게.
+ *  - 앱이 알려 준 상태로 판단한다(화면이 따로 계산한 «운행 중/종료» 값이 아니라).
+ *    어제 정상 종료한 휴대폰은 상태가 «종료됨(stopped)»으로 오는데, 그때도 오늘 운행은 시작해야 한다.
+ *    서버 연결 중(requesting)·종료 처리 중(stopping)·종료 확인 대기(stop-unknown)에는 요청하지 않는다.
+ *  - 한 화면에서 한 번만(기사님이 «운행 시작»을 직접 누른 뒤에도 다시 요청하지 않는다).
+ */
+export function shouldAutoStartRun(input: {
+  autoStart: boolean;
+  alreadyTried: boolean;
+  gpsMode: string;
+  nativeReady: boolean;
+  nativeRunning: boolean;
+  gpsState: string;
+  transmission: string;
+}): boolean {
+  return input.autoStart && !input.alreadyTried && input.gpsMode === "native" && input.nativeReady && !input.nativeRunning
+    && input.gpsState !== "requesting" && input.transmission !== "stopping" && input.transmission !== "stop-unknown";
+}

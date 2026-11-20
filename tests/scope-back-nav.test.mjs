@@ -399,7 +399,7 @@ test("M1 — «거쳐 가는 화면»은 기록하지 않는다(/staff/driver ·
   assert.match(entry, /window\.location\.replace\(target\)/);
   assert.match(entry, /router\.replace\(target\)/);
   const open = await read("src/app/staff/run/open/page.tsx");
-  assert.match(open, /redirect\(`\/driver\/\$\{token\}`\)/);
+  assert.match(open, /redirect\(driverAppRunHref\(token\)\)/);
   assert.doesNotMatch(open, /return </, "화면을 그리지 않는 redirect 전용 주소");
   // 기록 부품이 이 주소들을 건너뛴다
   const tracker = await read("src/components/navigation/ScopeHistoryTracker.tsx");

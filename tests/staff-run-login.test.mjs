@@ -55,7 +55,7 @@ test("앱 길(/staff/run/open)도 인증 → 셔틀 권한 → 열쇠 순서이�
   const tokenAt = runOpenPage.indexOf("await findRollingDriverRunToken()");
   assert.ok(guardAt > 0 && scopeAt > guardAt && tokenAt > scopeAt, "인증 → 셔틀 권한 → 열쇠 순서여야 한다");
   assert.match(runOpenPage, /export const dynamic = "force-dynamic"/);
-  assert.match(runOpenPage, /redirect\(`\/driver\/\$\{token\}`\)/);
+  assert.match(runOpenPage, /redirect\(driverAppRunHref\(token\)\)/);
   // 열쇠를 화면에 그리지 않는다(서버 이동만)
   assert.doesNotMatch(runOpenPage, /return \(/);
 });

@@ -68,7 +68,7 @@ function DriverLinkDisabledNotice() {
  * viaAccount = 로그인 계정 경로(/staff/run)가 이미 셔틀 권한을 확인하고 연 경우.
  * 이때만 운행 링크 스위치를 건너뛴다. 토큰 주소(/driver/[token] 등)는 스위치가 꺼지면 안내만 보인다.
  */
-export default async function UnifiedDriverRunPage({ token, searchDate, rememberToken = false, focusDirection = null, viaAccount = false }: { token: string; searchDate?: string | null; rememberToken?: boolean; focusDirection?: "PICKUP" | "DROPOFF" | null; viaAccount?: boolean }) {
+export default async function UnifiedDriverRunPage({ token, searchDate, rememberToken = false, focusDirection = null, viaAccount = false, autoStart = false }: { autoStart?: boolean; token: string; searchDate?: string | null; rememberToken?: boolean; focusDirection?: "PICKUP" | "DROPOFF" | null; viaAccount?: boolean }) {
   // 운행 링크 스위치(서버 판정) — 꺼졌으면 토큰이 맞아도 명단을 읽지 않는다.
   // 단, 셔틀 권한이 있는 로그인 사용자는 통과(API 문지기 driverLinkBlocked 와 같은 기준) — 안드로이드 앱의
   // «로그인만으로 운행 시작»(/staff/run/open → /driver/열쇠)이 스위치를 꺼도 끊기지 않게(2026-11-16 보안 검수 반영).
@@ -111,6 +111,7 @@ export default async function UnifiedDriverRunPage({ token, searchDate, remember
         focusDirection={focusDirection}
         academy={academy}
         holiday={holiday}
+        autoStart={autoStart && viewDate === today}
         healthHint={viaAccount ? "오늘·어제·내일 운행표에서만 내용이 보여요" : "앱에 로그인하면 내용이 보여요"}
       />
       {/* 토큰 검증을 통과한 뒤에만 기억한다. 만료된 링크를 기억하면 홈 화면
