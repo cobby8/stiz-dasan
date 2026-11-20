@@ -412,6 +412,10 @@ function makeDb(overrides = {}) {
       assert.match(sql, /bc\."startTime" AS "makeupStartTime"/, "마감 판정에 쓸 보강 반 시작 시각");
       return [{ ...c, bookedClassId: session?.makeupClassId ?? null, makeupYmd: session ? kst.toKstYmd(session.makeupDate) : null, makeupStartTime: session ? cls(session.makeupClassId).startTime : null }];
     }
+    // 오래된 보강권부터(2026-11-20): 같은 학생의 다른 «사용 가능» 보강권
+    if (/WHERE mc\."studentId" = \$1 AND mc\.status = 'AVAILABLE' AND mc\.id <> \$2/.test(sql)) {
+      return db.credits.filter((x) => x.studentId === args[0] && x.status === "AVAILABLE" && x.id !== args[1]);
+    }
     if (/WHERE mc\.id = \$1 AND s\."parentId" = \$2 AND mc\.status = 'AVAILABLE' LIMIT 1/.test(sql)) {
       const c = db.credits.find((x) => x.id === args[0]);
       return c && owns(c.studentId, args[1]) && c.status === "AVAILABLE" ? [{ ...c, studentGrade: student(c.studentId).grade }] : [];
