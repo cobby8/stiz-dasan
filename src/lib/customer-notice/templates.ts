@@ -176,12 +176,13 @@ export const PARENT_APP_INSTALL_URL = "https://www.stiz-dasan.kr/install";
 /** 가입 안내 네 문구의 문의 줄 — 카카오톡 채널 대신 원장 전화(2026-11-17 원장 지시) */
 export const SIGNUP_GUIDE_CONTACT_LINE = "문의: 김수빈 원장 010-9167-8117";
 
+// 2026-11-20 원장 지시: «12월부터»는 오해 소지 → «이제»(앱은 이미 운영 중)
 export function buildParentSignupGuideMessage() {
   return [
     "[스티즈농구교실] 학부모 앱 안내",
     "",
     "안녕하세요, 스티즈농구교실입니다.",
-    "랠리즈 사용을 종료하고, 12월부터 스티즈농구교실 앱을 사용합니다.",
+    "랠리즈 사용을 종료하고, 이제 스티즈농구교실 앱을 사용합니다.",
     "수업 소식·출결·수강료 청구와 결제를 모두 앱에서 하실 수 있어요.",
     "",
     `▶ 앱 설치: ${PARENT_APP_INSTALL_URL}`,
@@ -230,7 +231,7 @@ export function buildSignedInGuideMessage() {
     "[스티즈농구교실] 학부모 앱 설치 안내",
     "",
     "안녕하세요, 스티즈농구교실입니다.",
-    "랠리즈 사용을 종료하고, 12월부터 스티즈농구교실 앱을 사용합니다.",
+    "랠리즈 사용을 종료하고, 이제 스티즈농구교실 앱을 사용합니다.",
     "수업 소식·출결·수강료 청구와 결제를 모두 앱에서 하실 수 있어요.",
     "",
     `▶ 앱 설치: ${PARENT_APP_INSTALL_URL}`,
