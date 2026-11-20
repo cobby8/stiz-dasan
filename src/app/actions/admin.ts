@@ -14,7 +14,8 @@ import { isKstYmd, kstAt, todayKst } from "@/lib/datetime/kst";
 import { CHANGE_REQUEST_MESSAGE, resolveResumeDate } from "@/lib/enrollment/changeRequestRules";
 // 관리자 출결 저장의 학부모 알림 = 선생님 화면과 같은 규칙·같은 발송 함수
 import { attendanceNoticePayload, pickAttendanceNoticeTargets } from "@/lib/attendance/attendanceNoticeRules";
-import { deliverParentNotification, getStudentParentRecipients } from "@/lib/staff-notifications";
+import { deliverParentNotification, getClassParentRecipients, getStudentParentRecipients } from "@/lib/staff-notifications";
+import { parseNoticeTargetClassIds } from "@/lib/noticeTargets";
 import { after } from "next/server";
 import { normalizeApprovalClassIds } from "@/lib/enrollment/approval-classes";
 // 관리자 직접 수강 변경 뒤 정리(처리 중 신청·끝난 반의 결석·보강권·미납 안내) — 2026-11-14 김루빈 사례 재발 방지
@@ -2614,6 +2615,24 @@ export async function deleteGalleryPost(id: string) {
 }
 
 // ── 공지사항 관리 ────────────────────────────────────────────────────────────
+// 관리자 반 공지 알림: 대상 반(들) 학부모에게만 한 번씩, 링크는 /mypage/news/[id](로그인한 그 반 학부모만 열 수 있다).
+// 수신자 기준은 선생님 반 공지(staff-notices.ts)와 같은 getClassParentRecipients. 알림 실패가 «공지 저장 실패»로 보이지 않게 삼킨다.
+async function notifyClassNoticeParents(noticeId: string | undefined, classIds: string[], title: string) {
+    if (!noticeId || classIds.length === 0) return;
+    try {
+        // 반마다 차례로 조회한다(DB 연결 한도 5 — 동시에 여러 개를 열지 않는다)
+        const parentIds = new Set<string>();
+        for (const classId of classIds) {
+            for (const r of await getClassParentRecipients(classId)) if (r.userId) parentIds.add(r.userId);
+        }
+        for (const userId of parentIds) {
+            await createNotificationRecord({ userId, type: "NOTICE", title: "새 공지사항", message: title, linkUrl: `/mypage/news/${noticeId}` });
+        }
+    } catch (e) {
+        console.error("[createNotice] 반 공지 알림 실패(공지는 저장됨):", e);
+    }
+}
+
 export async function createNotice(data: {
     title: string;
     content: string;
@@ -2624,23 +2643,31 @@ export async function createNotice(data: {
 }) {
     await requireAdmin();
     try {
-        await prisma.$executeRawUnsafe(
+        const targetType = data.targetType || "ALL";
+        const inserted = await prisma.$queryRawUnsafe<{ id: string }[]>(
             `INSERT INTO "Notice" (id, title, content, "targetType", "targetClassIds", "attachmentsJSON", "isPinned", "createdAt", "updatedAt")
-             VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, $6, NOW(), NOW())`,
+             VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, $6, NOW(), NOW())
+             RETURNING id`,
             data.title,
             data.content,
-            data.targetType || "ALL",
+            targetType,
             data.targetClassIds || null,
             data.attachmentsJSON || null,
             data.isPinned || false,
         );
-        // 공지 작성 알림 → 모든 학부모에게
-        await notifyAllParents(
-            "NOTICE",
-            "새 공지사항",
-            data.title,
-            "/notices",
-        );
+        if (targetType === "CLASS") {
+            // 반 공지 알림 → 그 반 학부모에게만, 누르면 마이페이지의 그 공지로(2026-11-20 원장 결정).
+            // 예전엔 전체 학부모에게 제목이 가고 공개 목록(/notices)으로 보냈는데, 공개 목록·상세에는 반 공지가 없다.
+            await notifyClassNoticeParents(inserted[0]?.id, parseNoticeTargetClassIds(data.targetClassIds), data.title);
+        } else {
+            // 전체 공지 알림 → 모든 학부모에게
+            await notifyAllParents(
+                "NOTICE",
+                "새 공지사항",
+                data.title,
+                "/notices",
+            );
+        }
     } catch (e) {
         console.error("Failed to create notice:", e);
         throw new Error("공지사항 생성 실패");
