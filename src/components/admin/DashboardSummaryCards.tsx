@@ -34,7 +34,7 @@ export default function DashboardSummaryCards({ summary }: { summary: DashboardS
                 <span className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
                     <span className="text-3xl font-bold leading-tight tabular-nums text-[var(--color-academy-ink)]">{students.active}<span className="ml-0.5 text-base font-semibold">명</span></span>
                     {/* 총 수강시수 = 재원생이 듣는 반 수의 합(한 학생이 두 반이면 2) — 2026-11-21 원장 지시 «원생 숫자 옆에» */}
-                    <span className="text-sm text-[var(--color-academy-muted)]">총 수강시수 <span className="font-semibold tabular-nums text-[var(--color-academy-ink)]">{students.totalClasses}</span></span>
+                    <span className="whitespace-nowrap text-sm text-[var(--color-academy-muted)]">총 수강시수 <span className="font-semibold tabular-nums text-[var(--color-academy-ink)]">{students.totalClasses}</span></span>
                 </span>
             </Card>
 
