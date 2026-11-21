@@ -567,9 +567,9 @@ export async function applyDueEnrollmentChangesWithSummary(): Promise<DueEnrollm
         const linked = await tx.$queryRawUnsafe<{ id: string }[]>(`SELECT s.id FROM "Student" s WHERE s.id=$1 AND ${await childAccessSql("s", "$2")} AND s."mergedIntoStudentId" IS NULL`, row.studentId, row.requestedByUserId);
         parentConfirmed = linked.length === 1;
       }
-      // 관리자가 학생 상세에서 직접 예약한 복귀(2026-11-17)는 신청자 = 승인자 = 원장·부원장이다 — 보호자 확인 대상이 아니다.
-      // 종류(RESUME)·신청자=승인자·그 사람의 역할을 모두 DB 에서 다시 본다(학부모가 낸 신청은 여기 해당하지 않는다).
-      if (!parentConfirmed && row.kind === "RESUME" && row.requestedByUserId && row.requestedByUserId === row.decidedByUserId) {
+      // 관리자가 학생 상세에서 직접 예약한 복귀(2026-11-17)·수강 종료(2026-11-20)는 신청자 = 승인자 = 원장·부원장이다 — 보호자 확인 대상이 아니다.
+      // 종류(RESUME·WITHDRAW)·신청자=승인자·그 사람의 역할을 모두 DB 에서 다시 본다(학부모가 낸 신청은 여기 해당하지 않는다).
+      if (!parentConfirmed && (row.kind === "RESUME" || row.kind === "WITHDRAW") && row.requestedByUserId && row.requestedByUserId === row.decidedByUserId) {
         const adminRows = await tx.$queryRawUnsafe<{ id: string }[]>(
           `SELECT id FROM "User" WHERE id = $1 AND role::text IN ('ADMIN','VICE_ADMIN')`, row.requestedByUserId);
         parentConfirmed = adminRows.length === 1;

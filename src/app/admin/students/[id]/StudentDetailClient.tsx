@@ -6,7 +6,7 @@ import { useCallback, useEffect, useState, useTransition, type FormEvent } from 
 import Link from "next/link";
 import ScopeBackLink from "@/components/navigation/ScopeBackLink";
 import { normalizeUniformNumber, uniformNumberLabel, UNIFORM_NUMBER_MAX_LENGTH } from "@/lib/students/uniform-number";
-import { cancelScheduledResume, updateEnrollmentStatus, updateStudentMemo, updateStudent, updateStudentUniform, updatePaymentStatus, enrollStudent } from "@/app/actions/admin";
+import { cancelScheduledResume, cancelScheduledWithdraw, updateEnrollmentStatus, updateStudentMemo, updateStudent, updateStudentUniform, updatePaymentStatus, enrollStudent } from "@/app/actions/admin";
 import { todayKst, toKstYmd } from "@/lib/datetime/kst";
 // 청구/수납 탭 — 청구서 발행·수정·삭제 창과, 서버와 같은 «수정 가능» 판정(2026-11-09)
 import { CancelInvoiceModal, EditInvoiceModal, IssueInvoiceModal, type CancelablePayment, type EditablePayment } from "./StudentBillingModals";
@@ -192,7 +192,7 @@ type StudentActivityData = {
         parent: { name: string | null; phone: string | null; email: string | null };
     };
     enrollments: {
-        id: string; classId: string; status: string; displayStatus?: string; startsOn?: string | null; startsLater?: boolean; resumeFrom?: string | null; createdAt: Date | string;
+        id: string; classId: string; status: string; displayStatus?: string; startsOn?: string | null; startsLater?: boolean; resumeFrom?: string | null; withdrawFrom?: string | null; withdrawAdminBooked?: boolean; createdAt: Date | string;
         className: string; dayOfWeek: string; startTime: string; endTime: string; programName: string;
     }[];
     attendances: { id: string; status: string; date: Date | string; className: string }[];
@@ -926,16 +926,17 @@ export default function StudentDetailClient({
     }
 
     // 예약해 둔 복귀 취소 — 휴원은 그대로 두고 예약만 지운다
-    async function cancelResumeBooking(enrollmentId: string) {
+    async function cancelResumeBooking(enrollmentId: string, kind: "RESUME" | "WITHDRAW" = "RESUME") {
         if (statusUpdatingId) return;
         setStatusUpdatingId(enrollmentId);
         try {
-            const result = await cancelScheduledResume(enrollmentId);
+            // 수강 종료 예약 취소도 같은 흐름 — 지금 상태는 그대로 두고 예약만 지운다(2026-11-20)
+            const result = kind === "WITHDRAW" ? await cancelScheduledWithdraw(enrollmentId) : await cancelScheduledResume(enrollmentId);
             if (result.ok) await loadData();
             setStatusFeedback({ type: result.ok ? "success" : "error", message: result.message });
             window.setTimeout(() => setStatusFeedback(null), 4000);
         } catch (cancelError) {
-            setStatusFeedback({ type: "error", message: getErrorMessage(cancelError, "복귀 예약을 취소하지 못했습니다.") });
+            setStatusFeedback({ type: "error", message: getErrorMessage(cancelError, kind === "WITHDRAW" ? "수강 종료 예약을 취소하지 못했습니다." : "복귀 예약을 취소하지 못했습니다.") });
         } finally {
             setStatusUpdatingId(null);
         }
@@ -952,9 +953,11 @@ export default function StudentDetailClient({
         // 날짜·사유 칸은 상태(statusChange)와 묶여 있어 그 값을 그대로 쓴다
         const { enrollmentId, nextStatus, effectiveFrom, reason } = statusChange;
         // 휴원 → 수강 중(복귀)만 앞날을 받는다 — 그날 자동으로 수강 중으로 바뀌는 «복귀 예약»
+        // 수강 종료도 앞날을 받는다 — 그날 자동으로 수강 종료되는 «수강 종료 예약»(2026-11-20)
         const resumeBooking = statusChange.currentStatus === "PAUSED" && nextStatus === "ACTIVE";
-        if (effectiveFrom > todayKst() && !resumeBooking) {
-            setStatusFormError("미래 효력일은 예약 변경으로 신청해 주세요.");
+        const withdrawBooking = nextStatus === "WITHDRAWN";
+        if (effectiveFrom > todayKst() && !resumeBooking && !withdrawBooking) {
+            setStatusFormError("휴원은 오늘 이전 날짜로만 바꿀 수 있습니다. 앞날 휴원은 «수강 변경 신청»으로 받아 주세요.");
             return;
         }
         setStatusUpdatingId(enrollmentId);
@@ -975,7 +978,11 @@ export default function StudentDetailClient({
             await loadData();
             setStatusChange(null);
             setStatusOpenRequests(null);
-            setStatusFeedback({ type: "success", message: result.scheduledFrom ? `${result.scheduledFrom}부터 복귀로 예약했습니다. 그날 자동으로 수강 중으로 바뀝니다.` : "수강 상태를 변경했습니다." });
+            setStatusFeedback({ type: "success", message: result.scheduledFrom
+                ? result.scheduledKind === "WITHDRAW"
+                    ? `${result.scheduledFrom}부터 수강 종료로 예약했습니다. 그날 자동으로 수강 종료됩니다.`
+                    : `${result.scheduledFrom}부터 복귀로 예약했습니다. 그날 자동으로 수강 중으로 바뀝니다.`
+                : "수강 상태를 변경했습니다." });
             window.setTimeout(() => setStatusFeedback(null), result.scheduledFrom ? 6000 : 2500);
             // 함께 정리한 것·남은 미납 청구가 있으면 닫을 때까지 보여 준다
             setCleanupNotice(hasCleanupNotice(result.cleanup) ? result.cleanup : null);
@@ -1129,6 +1136,8 @@ export default function StudentDetailClient({
                         {enrollment.startsOn && ` · ${enrollment.startsOn} ${enrollment.startsLater ? "개시 예정" : "개시"}`}
                         {/* 예약된 복귀일 — 휴원 중이지만 이 날 자동으로 수강 중이 된다 */}
                         {enrollment.status === "PAUSED" && enrollment.resumeFrom && ` · ${enrollment.resumeFrom} 복귀 예정`}
+                        {/* 예약된 수강 종료일 — 이 날부터 수업이 없고 자동으로 수강 종료된다 */}
+                        {(enrollment.status === "ACTIVE" || enrollment.status === "PAUSED") && enrollment.withdrawFrom && ` · ${enrollment.withdrawFrom} 수강 종료 예정`}
                     </p>
                 </div>
                 {/* 우측: 상태 세그먼트. 퇴원도 이력을 보존하는 상태 변경으로 처리한다. */}
@@ -1168,6 +1177,10 @@ export default function StudentDetailClient({
                         // 예약해 둔 복귀가 있을 때만 — 휴원은 그대로 두고 예약만 지운다(날짜만 바꾸려면 «수강중»을 다시 눌러 새 날짜를 고른다)
                         ...(enrollment.status === "PAUSED" && enrollment.resumeFrom
                             ? [{ key: "cancel-resume", label: "복귀 예약 취소", icon: "event_busy", disabled: Boolean(statusUpdatingId), onSelect: () => void cancelResumeBooking(enrollment.id) }]
+                            : []),
+                        // 관리자가 예약한 수강 종료가 있을 때만 — 학부모 퇴원 신청은 «수강 변경 신청»에서 처리한다
+                        ...((enrollment.status === "ACTIVE" || enrollment.status === "PAUSED") && enrollment.withdrawFrom && enrollment.withdrawAdminBooked
+                            ? [{ key: "cancel-withdraw", label: "수강 종료 예약 취소", icon: "event_busy", disabled: Boolean(statusUpdatingId), onSelect: () => void cancelResumeBooking(enrollment.id, "WITHDRAW") }]
                             : []),
                         { key: "delete", label: "삭제(잘못 등록)", icon: "delete", tone: "danger", disabled: Boolean(statusUpdatingId), onSelect: () => deleteEnrollmentRow(enrollment) },
                     ]}
@@ -2316,7 +2329,7 @@ export default function StudentDetailClient({
                                 type="date"
                                 name="effectiveFrom"
                                 required
-                                max={statusChange.currentStatus === "PAUSED" && statusChange.nextStatus === "ACTIVE" ? undefined : todayKst()}
+                                max={(statusChange.currentStatus === "PAUSED" && statusChange.nextStatus === "ACTIVE") || statusChange.nextStatus === "WITHDRAWN" ? undefined : todayKst()}
                                 value={statusChange.effectiveFrom}
                                 onChange={(event) => setStatusChange((current) => current && ({ ...current, effectiveFrom: event.target.value }))}
                                 data-admin-modal-initial-focus="true"
@@ -2327,6 +2340,13 @@ export default function StudentDetailClient({
                                     {statusChange.effectiveFrom > todayKst()
                                         ? "그날까지는 휴원으로 두고, 그날 자동으로 수강 중으로 바뀝니다."
                                         : "오늘 이후 날짜를 고르면 그날부터 복귀로 예약됩니다(3개월 이내)."}
+                                </span>
+                            )}
+                            {statusChange.nextStatus === "WITHDRAWN" && (
+                                <span className="mt-1 block text-xs font-normal text-[var(--color-academy-muted)]">
+                                    {statusChange.effectiveFrom > todayKst()
+                                        ? "그날 전까지는 지금 상태로 두고, 그날 자동으로 수강 종료됩니다. 마지막 수업 다음 날을 고르세요."
+                                        : "효력일은 더는 안 나오는 첫날입니다. 오늘 이후 날짜를 고르면 수강 종료로 예약됩니다(3개월 이내)."}
                                 </span>
                             )}
                         </label>
