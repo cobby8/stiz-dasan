@@ -528,7 +528,7 @@ export async function loadDashboardSummary(): Promise<DashboardSummary> {
 
     return {
         currentYm,
-        students: { active: active.length, byBranch: countBy(active.map((s) => s.branchLabel), ["다산2호점"]) },
+        students: { active: active.length, totalClasses: active.reduce((sum, s) => sum + s.classes.length, 0), byBranch: countBy(active.map((s) => s.branchLabel), ["다산2호점"]) },
         billing: { rateAmount: rate(paid, billed), paidAmount: paid, billedAmount: billed, unpaidCount: num(raw.bill?.unpaid_count), unpaidAmount: num(raw.bill?.unpaid_amount) },
         attendance: { rate: thisAtt, prevRate: prevAtt, diff: diffPoint(thisAtt, prevAtt), series: attSeries },
         flow: { newCount: flow[flow.length - 1]?.newCount ?? 0, leftCount: flow[flow.length - 1]?.leftCount ?? 0, series: flow },

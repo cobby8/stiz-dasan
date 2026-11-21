@@ -436,7 +436,7 @@ export const getCachedAdminDashboardPrimaryPayload = adminOnly(unstable_cache(
 export function getCachedAdminDashboardSummary() {
     return adminOnly(unstable_cache(
         loadDashboardSummary,
-        ["admin-dashboard-summary-v1", todayKst().slice(0, 7)],
+        ["admin-dashboard-summary-v2", todayKst().slice(0, 7)],
         { revalidate: 60, tags: ["admin-dashboard", "admin-stats"] },
     ))();
 }
