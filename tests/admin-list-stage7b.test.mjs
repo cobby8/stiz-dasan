@@ -149,7 +149,8 @@ test("유니폼: 한 줄 표(«·» 묶음·두 줄 칸 없음), 접수일 오�
   assert.match(uniform, /<ListDetailPanel onClose=\{\(\) => setDetailOrderId\(null\)\} titleId="uniform-detail-panel-title"/);
   assert.match(uniform, /function handleRowKeyDown[\s\S]*?if \(event\.target !== event\.currentTarget\) return;/);
   assert.match(uniform, /admin-cell-center px-2 py-1\.5" onClick=\{\(event\) => event\.stopPropagation\(\)\}/);
-  assert.match(uniform, /onClick=\{\(\) => handleRetry\(order\)\}\s*disabled=\{isPending \|\| busyId === order\.id\}/);
+  // 2026-11-21 일괄 본사 전송 중에는 한 건 재전송도 막는다(같은 주문을 두 번 보내지 않게)
+  assert.match(uniform, /onClick=\{\(\) => handleRetry\(order\)\}\s*disabled=\{isPending \|\| busyId === order\.id \|\| bulkProgress !== null\}/);
   assert.match(uniform, /await retryUniformOrderDispatch\(order\.id\)/);
   assert.match(uniform, /STIZ 본사로 다시 전송할까요\?/);
 });

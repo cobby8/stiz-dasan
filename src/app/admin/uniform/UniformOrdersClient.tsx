@@ -72,6 +72,28 @@ function canRetry(order: UniformOrderAdminView) {
   return ["PENDING", "RETRY_WAIT", "NEEDS_REVIEW", "SETUP_REQUIRED"].includes(order.stizSyncStatus);
 }
 
+/** 한 번에 본사로 보낼 수 있는 최대 건수(2026-11-21) — 한 건씩 차례로 보내므로 너무 길어지지 않게 */
+export const BULK_RETRY_LIMIT = 30;
+
+/** 상·하의 사이즈가 빈 학생 이름 — 일괄 전송 확인 창에 미리 알린다 */
+export function missingSizeStudents(orders: UniformOrderAdminView[]): string[] {
+  return orders.flatMap((order) => order.items
+    .filter((item) => !item.topSize?.trim() || !item.bottomSize?.trim())
+    .map((item) => item.studentName));
+}
+
+/** 일괄 전송 확인 글 — 무료 증정은 «이미 본사에 따로 주문했다면 중복»을 먼저 경고한다 */
+export function bulkRetryConfirmText(orders: UniformOrderAdminView[]): string {
+  const freeCount = orders.filter((order) => isFreeUniformOrderMemo(order.customerMemo)).length;
+  const missing = missingSizeStudents(orders);
+  return [
+    `선택한 유니폼 신청 ${orders.length}건을 STIZ 본사로 한 번에 전송할까요?`,
+    "한 건씩 차례로 보내며, 본사 접수에 성공하면 학부모 문자 안내가 발송될 수 있습니다.",
+    freeCount > 0 ? `무료 증정 ${freeCount}건 포함 — 이미 본사에 따로 주문한 건이면 본사에 주문이 한 번 더 들어갑니다.` : "",
+    missing.length > 0 ? `사이즈가 비어 있는 학생: ${missing.join(", ")} — 본사에서 접수를 거절할 수 있어요.` : "",
+  ].filter(Boolean).join("\n");
+}
+
 export default function UniformOrdersClient({
   initialOrders,
   loadError,
@@ -86,6 +108,9 @@ export default function UniformOrdersClient({
   const [isPending, startTransition] = useTransition();
   // 행 클릭 상세 패널 대상
   const [detailOrderId, setDetailOrderId] = useState<string | null>(null);
+  // 일괄 본사 전송(2026-11-21 원장 «체크해서 한 번에 처리») — 고른 주문 id · 진행 «3/10»
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null);
 
   const visibleOrders = useMemo(() => {
     if (filter === "SENT") {
@@ -133,6 +158,67 @@ export default function UniformOrdersClient({
     });
   }
 
+  const selectableOrders = visibleOrders.filter(canRetry);
+  const selectedOrders = initialOrders.filter((order) => selectedIds.has(order.id) && canRetry(order));
+  const allSelected = selectableOrders.length > 0 && selectableOrders.every((order) => selectedIds.has(order.id));
+
+  function toggleSelected(id: string) {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleAllSelected() {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      for (const order of selectableOrders) {
+        if (allSelected) next.delete(order.id);
+        else next.add(order.id);
+      }
+      return next;
+    });
+  }
+
+  // 일괄 전송 — 서버 함수 시간 제한(60초)·본사 응답 대기(건당 최대 12초) 때문에 «한 건씩 차례로» 기존 재전송 액션을 부른다.
+  // 한 건이 실패해도 나머지는 계속 보낸다. 끝나면 성공·확인 필요 건수를 알린다.
+  async function handleBulkRetry() {
+    const targets = selectedOrders;
+    if (targets.length === 0) return;
+    if (targets.length > BULK_RETRY_LIMIT) {
+      setFeedback({ type: "error", message: `한 번에 ${BULK_RETRY_LIMIT}건까지 전송할 수 있어요.` });
+      return;
+    }
+    if (!(await askConfirm(bulkRetryConfirmText(targets), { tone: "primary" }))) return;
+    setFeedback(null);
+    setBulkProgress({ done: 0, total: targets.length });
+    let sent = 0;
+    const failed: string[] = [];
+    for (const [index, order] of targets.entries()) {
+      setBusyId(order.id);
+      try {
+        const result = await retryUniformOrderDispatch(order.id);
+        if (result.syncStatus === "SENT" || result.syncStatus === "DUPLICATE") sent += 1;
+        else failed.push(order.items[0]?.studentName || order.parentName);
+      } catch {
+        failed.push(order.items[0]?.studentName || order.parentName);
+      }
+      setBulkProgress({ done: index + 1, total: targets.length });
+    }
+    setBusyId(null);
+    setBulkProgress(null);
+    setSelectedIds(new Set());
+    setFeedback({
+      type: failed.length === 0 ? "success" : "error",
+      message: failed.length === 0
+        ? `${sent}건 본사 접수가 완료되었습니다.`
+        : `${sent}건 본사 접수 완료 · ${failed.length}건 확인 필요(${failed.join(", ")}) — 오류 내용은 행을 눌러 확인해 주세요.`,
+    });
+    router.refresh();
+  }
+
   // 상태 칩 — 기존 필터 버튼과 같은 filter 값(ACTION·WAITING·SENT)을 공유, 다시 누르면 전체(ALL)
   const chipItems = [
     { value: "ACTION", label: "처리 필요", count: counts.action },
@@ -160,7 +246,7 @@ export default function UniformOrdersClient({
       <button
         type="button"
         onClick={() => handleRetry(order)}
-        disabled={isPending || busyId === order.id}
+        disabled={isPending || busyId === order.id || bulkProgress !== null}
         className="academy-button-tonal academy-button-sm"
       >
         {/* 돌아가는 아이콘 대신 글자로 진행 중임을 알린다 */}
@@ -208,9 +294,24 @@ export default function UniformOrdersClient({
         ariaLabel="유니폼 주문 상태별 건수"
         items={chipItems}
         selected={filter}
-        onSelect={(value) => { setFilter(value); setDetailOrderId(null); }}
+        onSelect={(value) => { setFilter(value); setDetailOrderId(null); setSelectedIds(new Set()); }}
         allValue="ALL"
       />
+
+      {/* 일괄 본사 전송 — 재전송할 수 있는 행만 체크할 수 있다 */}
+      {selectableOrders.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            className="academy-button-primary"
+            disabled={isPending || bulkProgress !== null || selectedOrders.length === 0}
+            onClick={handleBulkRetry}
+          >
+            {bulkProgress ? `전송 중… ${bulkProgress.done}/${bulkProgress.total}` : `선택 ${selectedOrders.length}건 본사 전송`}
+          </button>
+          <span className="text-xs text-[var(--color-academy-muted)]">체크한 신청을 한 건씩 차례로 본사로 보냅니다.</span>
+        </div>
+      )}
 
       <section className="overflow-hidden rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] shadow-sm">
         <div className="overflow-x-auto">
@@ -218,6 +319,15 @@ export default function UniformOrdersClient({
           <table className="admin-list-table w-full border-collapse text-sm">
             <thead className="bg-[var(--color-academy-soft)] text-xs font-medium text-[var(--color-academy-muted)]">
               <tr>
+                <th className="w-8 px-2 py-2">
+                  <input
+                    type="checkbox"
+                    aria-label="보이는 재전송 가능 신청 모두 고르기"
+                    checked={allSelected}
+                    disabled={selectableOrders.length === 0 || bulkProgress !== null}
+                    onChange={toggleAllSelected}
+                  />
+                </th>
                 <th className="px-2 py-2">상태</th>
                 <th className="admin-cell-num px-2 py-2">접수일</th>
                 <th className="px-2 py-2">학부모</th>
@@ -242,6 +352,18 @@ export default function UniformOrdersClient({
                     onKeyDown={(event) => handleRowKeyDown(event, order.id)}
                     className="cursor-pointer transition-colors hover:bg-[var(--color-academy-soft)] focus:bg-[var(--color-academy-primary-soft)] focus:outline-none"
                   >
+                    {/* 체크 칸 — 행 클릭(상세 패널)과 겹치지 않게 전파 차단 */}
+                    <td className="px-2 py-1.5" onClick={(event) => event.stopPropagation()}>
+                      {canRetry(order) && (
+                        <input
+                          type="checkbox"
+                          aria-label={`${order.parentName} 신청 고르기`}
+                          checked={selectedIds.has(order.id)}
+                          disabled={bulkProgress !== null}
+                          onChange={() => toggleSelected(order.id)}
+                        />
+                      )}
+                    </td>
                     <td className="px-2 py-1.5"><SyncBadge order={order} sync={sync} /></td>
                     <td className="admin-cell-num px-2 py-1.5 text-[var(--color-academy-muted)]">{formatDateTime(order.createdAt)}</td>
                     <td className="px-2 py-1.5 font-semibold text-[var(--color-academy-ink)]">{order.parentName}</td>
@@ -264,7 +386,7 @@ export default function UniformOrdersClient({
               })}
               {visibleOrders.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="px-4 py-4 text-center text-sm text-[var(--color-academy-muted)]">
+                  <td colSpan={10} className="px-4 py-4 text-center text-sm text-[var(--color-academy-muted)]">
                     표시할 유니폼 신청이 없습니다.
                   </td>
                 </tr>

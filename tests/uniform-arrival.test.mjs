@@ -388,3 +388,65 @@ test("화면: 미도착 기본 · 경고·출처·무료 증정 표시 · 전화
   assert.doesNotMatch(html, /3년 재원 무료 증정\] 메모|010/);
   assert.match(html, /href="\/admin\/uniform"/);
 });
+
+// ── ⑥ 본사 전송 일괄(2026-11-21 원장 «체크해서 한 번에 처리») ─────────────
+
+function siteOrder(id, over = {}) {
+  return {
+    id, partnerRequestId: `dasan-uniform-${id}`, parentName: `보호자${id}`, parentPhone: "010-0000-0000", customerMemo: FREE_MEMO,
+    orderStatus: "RECEIVED", stizSyncStatus: "NEEDS_REVIEW", stizOrderNumber: null, stizDuplicate: false, stizMessage: null,
+    sendAttempts: 0, nextRetryAt: null, lastError: null, lastSentAt: null, createdAt: "2026-11-14T02:34:00.000Z", updatedAt: "2026-11-14T02:34:00.000Z",
+    items: [{ id: `${id}-i`, studentName: `학생${id}`, design: "블랙", initials: null, backNumber: "9", topSize: "130", bottomSize: "130", quantity: 2 }],
+    ...over,
+  };
+}
+
+function loadOrdersClient(extraMocks = {}) {
+  const React = require("react");
+  return load("src/app/admin/uniform/UniformOrdersClient.tsx", {
+    "next/link": { __esModule: true, default: ({ href, children, ...props }) => React.createElement("a", { href, ...props }, children) },
+    "next/navigation": { useRouter: () => ({ refresh() {} }) },
+    "@/app/actions/uniform": { retryUniformOrderDispatch: async () => ({ syncStatus: "SENT" }) },
+    "@/components/ui/feedback": { askConfirm: async () => true },
+    ...extraMocks,
+  });
+}
+
+test("본사 전송 화면: 재전송할 수 있는 행에만 체크 칸 · 모두 고르기 · 일괄 전송 버튼", () => {
+  const React = require("react");
+  const { renderToStaticMarkup } = require("react-dom/server");
+  const { default: Client } = loadOrdersClient();
+  const orders = [
+    siteOrder("a"),
+    siteOrder("b", { stizSyncStatus: "SETUP_REQUIRED", customerMemo: null }),
+    siteOrder("c", { stizSyncStatus: "SENT", stizOrderNumber: "ORD-1", customerMemo: null }),
+  ];
+  const html = renderToStaticMarkup(React.createElement(Client, { initialOrders: orders, loadError: "" }));
+  assert.equal((html.match(/신청 고르기/g) ?? []).length, 2, "본사 접수 끝난 행은 체크 칸 없음");
+  assert.match(html, /보이는 재전송 가능 신청 모두 고르기/);
+  assert.match(html, /선택 0건 본사 전송/);
+  assert.match(html, /재전송/, "한 건씩 재전송 버튼은 그대로");
+});
+
+test("일괄 전송 확인 글: 무료 증정 중복 주문 경고 · 사이즈 빈 학생", () => {
+  const client = loadOrdersClient();
+  const text = client.bulkRetryConfirmText([
+    siteOrder("a"),
+    siteOrder("b", { customerMemo: null, items: [{ id: "b-i", studentName: "김관우", design: null, initials: null, backNumber: "7", topSize: "140", bottomSize: "", quantity: 1 }] }),
+  ]);
+  assert.match(text, /2건을 STIZ 본사로 한 번에 전송/);
+  assert.match(text, /무료 증정 1건 포함 — 이미 본사에 따로 주문한 건이면 본사에 주문이 한 번 더/);
+  assert.match(text, /사이즈가 비어 있는 학생: 김관우/);
+  assert.match(text, /학부모 문자 안내가 발송될 수/);
+  assert.equal(client.bulkRetryConfirmText([siteOrder("c", { customerMemo: null })]).includes("무료 증정"), false);
+  assert.equal(client.BULK_RETRY_LIMIT, 30);
+});
+
+test("일괄 전송: 한 건씩 차례로 기존 재전송 액션 · 실패해도 나머지 계속", () => {
+  const source = read("src/app/admin/uniform/UniformOrdersClient.tsx");
+  const handler = source.slice(source.indexOf("async function handleBulkRetry"), source.indexOf("// 상태 칩"));
+  assert.match(handler, /for \(const \[index, order\] of targets\.entries\(\)\)[\s\S]*await retryUniformOrderDispatch\(order\.id\)/);
+  assert.match(handler, /catch \{\s*failed\.push/);
+  assert.match(handler, /askConfirm\(bulkRetryConfirmText\(targets\)/);
+  assert.doesNotMatch(handler, /Promise\.all/, "동시에 보내지 않는다(본사 부하·시간 제한)");
+});
