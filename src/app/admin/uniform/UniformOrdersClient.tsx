@@ -12,7 +12,7 @@ import { formatKstDate } from "@/lib/datetime/kst";
 import { isFreeUniformOrderMemo } from "@/lib/uniform-free-grant-rules";
 // 수량은 «장»(상의 1 + 하의 1)으로 저장된다 — 화면에서는 «1벌(상·하)·상의만»으로 읽는다(2026-11-21)
 import { uniformOrderQuantityLabel, uniformQuantityLabel } from "@/lib/uniform/arrivalRules";
-import { canEditUniformOrder } from "@/lib/uniform/orderEdit";
+import { canEditUniformOrder } from "@/lib/uniform/orderEditRules";
 import UniformItemEditForm from "./UniformItemEditForm";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import { askConfirm } from "@/components/ui/feedback";

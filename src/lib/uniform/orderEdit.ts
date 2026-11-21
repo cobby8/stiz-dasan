@@ -10,10 +10,11 @@
 //   5) 누가 무엇을 바꿨는지 OperationsAuditLog 에 전후 값을 남긴다(전화번호는 넣지 않는다).
 import { canonicalJson } from "@/lib/uniform-partner";
 import { DESIGN_OPTIONS, SIZE_OPTIONS } from "@/lib/uniform-options";
+import { canEditUniformOrder, EDITABLE_SYNC_STATUSES } from "@/lib/uniform/orderEditRules";
+
+export { canEditUniformOrder, EDITABLE_SYNC_STATUSES };
 
 export const UNIFORM_ORDER_EDIT_AUDIT_ACTION = "UNIFORM_ORDER_ITEM_EDIT";
-/** 본사로 아직 안 간 상태 — 이 상태의 신청만 고칠 수 있다(재전송 버튼이 보이는 상태와 같다) */
-export const EDITABLE_SYNC_STATUSES = ["PENDING", "RETRY_WAIT", "NEEDS_REVIEW", "SETUP_REQUIRED"] as const;
 
 export type UniformItemEditFields = {
   studentName: string;
@@ -33,10 +34,6 @@ export type UniformItemSnapshot = {
   bottomSize: string | null;
   quantity: number;
 };
-
-export function canEditUniformOrder(order: { orderStatus: string; stizSyncStatus: string }): boolean {
-  return order.orderStatus !== "CANCELED" && (EDITABLE_SYNC_STATUSES as readonly string[]).includes(order.stizSyncStatus);
-}
 
 function clean(value: unknown): string {
   return String(value ?? "").trim();

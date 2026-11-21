@@ -551,3 +551,37 @@ test("수정 화면: 서버 액션은 관리자 확인 · 상세 패널에 «내
   assert.match(html, /하의 사이즈/);
   assert.match(html, />저장</);
 });
+
+test("빌드 가드: 유니폼 화면(브라우저 묶음)이 node 전용 모듈(node:crypto 등)을 끌어오지 않는다", () => {
+  // 2026-11-21 화면이 orderEdit.ts → uniform-partner.ts → node:crypto 를 불러 운영 빌드가 실패했다.
+  // 서버 액션 파일("use server")은 화면에 참조만 들어가므로 따라가지 않는다.
+  const clients = [
+    "src/app/admin/uniform/UniformOrdersClient.tsx",
+    "src/app/admin/uniform/UniformItemEditForm.tsx",
+    "src/app/admin/uniform/status/UniformStatusClient.tsx",
+  ];
+  const seen = new Set();
+  const offenders = [];
+  const walk = (file, chain) => {
+    if (seen.has(file)) return;
+    seen.add(file);
+    const code = read(file);
+    if (/^\s*["']use server["']/.test(code)) return;
+    for (const match of code.matchAll(/^\s*import\s+(?!type\b)[^;]*?from\s+["']([^"']+)["']/gm)) {
+      const spec = match[1];
+      if (spec.startsWith("node:") || ["crypto", "fs", "path", "child_process"].includes(spec)) {
+        offenders.push(`${[...chain, file].join(" → ")} → ${spec}`);
+        continue;
+      }
+      if (!spec.startsWith("@/") && !spec.startsWith(".")) continue;
+      const base = spec.startsWith("@/") ? `src/${spec.slice(2)}` : resolve(file, "..", spec);
+      const next = [".ts", ".tsx", "/index.ts"].map((ext) => base + ext).find((p) => existsSync(p));
+      const toRepoPath = (p) => p.split(String.fromCharCode(92)).join("/").replace(resolve(".").split(String.fromCharCode(92)).join("/") + "/", "");
+      if (next) walk(toRepoPath(next), [...chain, file]);
+    }
+  };
+  for (const client of clients) walk(client, []);
+  assert.deepEqual(offenders, []);
+  assert.ok(seen.has("src/lib/uniform/orderEditRules.ts"));
+  assert.ok(!seen.has("src/lib/uniform/orderEdit.ts"), "화면은 orderEdit.ts(서버 전용)를 불러오지 않는다");
+});
