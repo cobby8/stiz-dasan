@@ -13,7 +13,8 @@ export type MonthAmount = { ym: string; label: string; amount: number; count: nu
 /** 대시보드 맨 위 카드 6개 */
 export type DashboardSummary = {
     currentYm: string;
-    students: { active: number; byBranch: LabelCount[] };
+    /** totalClasses = 재원생이 듣는 반 수의 합(총 수강시수 · 2026-11-21 원장 지시) */
+    students: { active: number; totalClasses: number; byBranch: LabelCount[] };
     billing: { rateAmount: number | null; paidAmount: number; billedAmount: number; unpaidCount: number; unpaidAmount: number };
     attendance: { rate: number | null; prevRate: number | null; diff: number | null; series: MonthRate[] };
     flow: { newCount: number; leftCount: number; series: MonthFlow[] };
