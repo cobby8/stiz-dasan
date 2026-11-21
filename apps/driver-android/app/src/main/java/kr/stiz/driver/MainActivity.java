@@ -673,6 +673,14 @@ public final class MainActivity extends Activity {
                 boolean pending = value.optBoolean("stopPending");
                 boolean confirmed = value.optBoolean("serverStopConfirmed");
                 if (pending && visible) runOnUiThread(() -> { if (visible) startService(new Intent(this, DriverLocationService.class).setAction(DriverLocationService.STOP)); });
+                // 저장된 운행이 «다른(옛) 운행 링크»의 것이고 이미 끝났으면, 지금 화면의 열쇠로 «대기»를 알린다(1.0.7).
+                // 옛 열쇠로 알리면 화면이 자기 것이 아니라고 버려서, 운행 링크를 새로 만든 뒤에는 앱 상태를 영영 받지 못했다.
+                // 끝나지 않은 다른 운행(종료 확인 대기 등)은 예전대로 둔다 — handle() 이 같은 기준으로 새 시작을 막는다.
+                if (!token.isEmpty() && !value.optString("token", token).equals(token) && value.optBoolean("stopped", true) && !pending) {
+                    publishSnapshot(new JSONObject().put("token", token).put("state", "off").put("transmission", "idle").put("running", false)
+                        .put("lastSentAt", JSONObject.NULL).put("lastLocationAt", JSONObject.NULL).put("accuracy", JSONObject.NULL).toString());
+                    return;
+                }
                 JSONObject detail = new JSONObject().put("token", value.optString("token", token)).put("state", "off")
                     .put("transmission", pending ? "stop-unknown" : confirmed ? "stopped" : value.has("sessionId") ? "error" : "idle").put("running", false)
                     .put("lastSentAt", value.opt("lastSentAt") == null ? JSONObject.NULL : value.opt("lastSentAt"))

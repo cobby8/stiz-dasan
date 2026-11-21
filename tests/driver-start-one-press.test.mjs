@@ -100,3 +100,14 @@ test("앱 — 설정 화면은 기사님이 버튼을 눌렀을 때만 열고, �
   assert.ok(!help.includes("launchRun(") && !help.includes("requestPermissionsAndStart("));
   assert.ok(help.includes("if (isFinishing() || isDestroyed() || settingsHelpOpen) return;"));
 });
+
+test("앱 — 끝난 옛 운행 링크의 기록이 남아 있어도 지금 화면의 열쇠로 «대기»를 알린다", () => {
+  const snap = activity.slice(activity.indexOf("    private void snapshot() {"), activity.indexOf("    private void error(String message) {"));
+  const guardAt = snap.indexOf('if (!token.isEmpty() && !value.optString("token", token).equals(token) && value.optBoolean("stopped", true) && !pending) {');
+  assert.ok(guardAt > 0, "다른 열쇠·끝난 운행·종료 대기 아님일 때만");
+  const branch = snap.slice(guardAt, snap.indexOf("JSONObject detail"));
+  assert.ok(branch.includes('.put("token", token).put("state", "off").put("transmission", "idle").put("running", false)'));
+  assert.ok(branch.includes("return;"));
+  // 새 시작을 막는 기준(handle)과 같은 값(stopped·stopPending)을 본다 — 끝나지 않은 다른 운행은 «대기»로 알리지 않는다
+  assert.ok(activity.includes('(!stored.optBoolean("stopped", true) || stored.optBoolean("stopPending"))'));
+});
