@@ -6,6 +6,7 @@ import { sendParentSmsWithResult } from "@/lib/notification";
 import { prisma } from "@/lib/prisma";
 import { dispatchUniformOrderById } from "@/lib/uniform-order-service";
 import { markUniformArrived, markUniformReceived } from "@/lib/uniform/arrivalService";
+import { updateUniformOrderItem, type UniformItemEditFields } from "@/lib/uniform/orderEdit";
 
 export async function retryUniformOrderDispatch(orderId: string) {
   await requireAdmin();
@@ -45,6 +46,17 @@ export async function markUniformArrivedAction(keys: string[]) {
 export async function markUniformReceivedAction(keys: string[]) {
   const admin = await requireAdmin();
   const result = await markUniformReceived(prisma, { keys, actorName: admin.appUserName || null });
+  revalidateUniformScreens();
+  return result;
+}
+
+/**
+ * 유니폼 신청 내용 수정(2026-11-21) — 본사에 아직 안 간 사이트 신청의 학생 한 명분(이름·디자인·이니셜·등번호·사이즈).
+ * 본사 접수·취소된 신청은 서버가 거절한다. 전후 값은 운영 감사 기록에 남는다.
+ */
+export async function updateUniformOrderItemAction(itemId: string, fields: UniformItemEditFields) {
+  const admin = await requireAdmin();
+  const result = await updateUniformOrderItem(prisma, { itemId, fields, actorUserId: admin.appUserId || null });
   revalidateUniformScreens();
   return result;
 }

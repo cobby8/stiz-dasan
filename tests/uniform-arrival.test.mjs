@@ -469,3 +469,85 @@ test("수량 표시: 사이트 신청은 «장» 저장 → 1벌(상·하)·상�
   assert.doesNotMatch(html, />2벌</);
   assert.match(read("src/app/admin/uniform/status/UniformStatusClient.tsx"), /\{uniformQuantityLabel\(item\)\}/);
 });
+
+// ── ⑦ 신청 내용 수정(2026-11-21 원장 «주문 내용을 수정하는 기능») ─────────
+
+const edit = load("src/lib/uniform/orderEdit.ts");
+const ORIGINAL = { studentName: "김관우", design: "DYG 블랙&화이트", initials: "KKW", backNumber: "7", topSize: "2XS(140)", bottomSize: null, quantity: 1 };
+
+test("수정 검증: 목록 값·등번호·사이즈 하나 이상 · 수량 재계산 · 옛 값은 그대로 두면 통과", () => {
+  const ok = edit.normalizeUniformItemEdit({ ...ORIGINAL, bottomSize: "2XS(140)", backNumber: "#7" }, ORIGINAL);
+  assert.equal(ok.ok, true);
+  assert.equal(ok.value.quantity, 2, "하의 추가 → 상의 1 + 하의 1");
+  assert.equal(ok.value.backNumber, "7");
+  const err = (fields) => edit.normalizeUniformItemEdit({ ...ORIGINAL, ...fields }, ORIGINAL).error;
+  assert.match(err({ studentName: " " }), /학생 이름/);
+  assert.match(err({ design: "없는 디자인" }), /디자인/);
+  assert.match(err({ backNumber: "12a" }), /등번호/);
+  assert.match(err({ topSize: "", bottomSize: "" }), /하나 이상/);
+  assert.match(err({ topSize: "999" }), /상의 사이즈/);
+  // 예전 신청의 목록 밖 사이즈("130")는 그대로 두면 통과, 다른 목록 밖 값으로는 못 바꾼다
+  const legacy = { ...ORIGINAL, topSize: "130" };
+  assert.equal(edit.normalizeUniformItemEdit({ ...legacy, backNumber: "8" }, legacy).ok, true);
+  assert.equal(edit.normalizeUniformItemEdit({ ...legacy, topSize: "131" }, legacy).ok, false);
+  assert.equal(edit.canEditUniformOrder({ orderStatus: "RECEIVED", stizSyncStatus: "NEEDS_REVIEW" }), true);
+  assert.equal(edit.canEditUniformOrder({ orderStatus: "RECEIVED", stizSyncStatus: "SENT" }), false);
+  assert.equal(edit.canEditUniformOrder({ orderStatus: "RECEIVED", stizSyncStatus: "SENDING" }), false);
+  assert.equal(edit.canEditUniformOrder({ orderStatus: "CANCELED", stizSyncStatus: "PENDING" }), false);
+});
+
+function editDb({ status = "NEEDS_REVIEW", updateRows = [{ id: "i1" }] } = {}) {
+  const log = [];
+  return {
+    log,
+    async $queryRawUnsafe(sql, ...args) {
+      log.push({ sql, args });
+      if (sql.startsWith(`SELECT i."uniformOrderId"`)) return [{ ...ORIGINAL, orderId: "o1", orderStatus: "RECEIVED", stizSyncStatus: status }];
+      if (sql.includes(`UPDATE "UniformOrderItem" i`)) return updateRows;
+      if (sql.includes(`FROM "UniformOrderItem" WHERE "uniformOrderId"`)) return [{ ...ORIGINAL, bottomSize: "2XS(140)" }];
+      throw new Error(sql);
+    },
+    async $executeRawUnsafe(sql, ...args) { log.push({ sql, args }); return 1; },
+  };
+}
+
+test("수정 저장: 본사 안 간 상태만(WHERE 조건) · 주문 열쇠 재계산 · 감사 기록 전후 값", async () => {
+  const db = editDb();
+  const result = await edit.updateUniformOrderItem(db, { itemId: "i1", fields: { ...ORIGINAL, bottomSize: "2XS(140)" }, actorUserId: "admin1" });
+  assert.deepEqual(result.changed, ["하의 사이즈"]);
+  const update = db.log.find((e) => e.sql.includes(`UPDATE "UniformOrderItem" i`));
+  assert.match(update.sql, /o\."stizSyncStatus" = ANY\(\$9::text\[\]\)/);
+  assert.match(update.sql, /o\."orderStatus" <> 'CANCELED'/);
+  assert.deepEqual(update.args[8], ["PENDING", "RETRY_WAIT", "NEEDS_REVIEW", "SETUP_REQUIRED"]);
+  assert.equal(update.args[7], 2);
+  const signature = db.log.find((e) => e.sql.includes(`"itemSignature" = $2`));
+  assert.ok(signature.args[1].includes("2XS(140)"));
+  const audit = db.log.find((e) => e.sql.includes(`"OperationsAuditLog"`));
+  assert.equal(audit.args[0], "UNIFORM_ORDER_ITEM_EDIT");
+  assert.equal(audit.args[1], "admin1");
+  assert.doesNotMatch(audit.args[2], /010/);
+
+  // 바뀐 것 없음 → 저장 안 함
+  const same = editDb();
+  assert.deepEqual((await edit.updateUniformOrderItem(same, { itemId: "i1", fields: ORIGINAL, actorUserId: null })).changed, []);
+  assert.ok(!same.log.some((e) => e.sql.includes("UPDATE")));
+  // 본사 접수된 신청 거절 · 읽은 뒤 전송이 시작돼 0줄이면 거절
+  await assert.rejects(edit.updateUniformOrderItem(editDb({ status: "SENT" }), { itemId: "i1", fields: ORIGINAL, actorUserId: null }), /본사에 이미 접수/);
+  await assert.rejects(edit.updateUniformOrderItem(editDb({ updateRows: [] }), { itemId: "i1", fields: { ...ORIGINAL, initials: "K" }, actorUserId: null }), /방금 본사 전송/);
+});
+
+test("수정 화면: 서버 액션은 관리자 확인 · 상세 패널에 «내용 수정»(본사 안 간 신청만) · 옛 값도 목록에", () => {
+  assert.match(read("src/app/actions/uniform.ts"), /export async function updateUniformOrderItemAction[\s\S]*?await requireAdmin\(\)/);
+  const client = read("src/app/admin/uniform/UniformOrdersClient.tsx");
+  assert.match(client, /canEditUniformOrder\(d\) && editingItemId !== item\.id/);
+  assert.match(client, /본사에 접수된 신청은 여기서 고칠 수 없어요/);
+  const form = load("src/app/admin/uniform/UniformItemEditForm.tsx", { "@/app/actions/uniform": { updateUniformOrderItemAction: async () => ({}) } });
+  assert.deepEqual(form.optionsWithCurrent(["", "M"], "130"), ["130", "", "M"]);
+  assert.deepEqual(form.optionsWithCurrent(["", "M"], "M"), ["", "M"]);
+  const React = require("react");
+  const { renderToStaticMarkup } = require("react-dom/server");
+  const html = renderToStaticMarkup(React.createElement(form.default, { item: { id: "i1", ...ORIGINAL }, onDone() {}, onCancel() {} }));
+  assert.match(html, /value="김관우"/);
+  assert.match(html, /하의 사이즈/);
+  assert.match(html, />저장</);
+});

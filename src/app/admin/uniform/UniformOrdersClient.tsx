@@ -12,6 +12,8 @@ import { formatKstDate } from "@/lib/datetime/kst";
 import { isFreeUniformOrderMemo } from "@/lib/uniform-free-grant-rules";
 // 수량은 «장»(상의 1 + 하의 1)으로 저장된다 — 화면에서는 «1벌(상·하)·상의만»으로 읽는다(2026-11-21)
 import { uniformOrderQuantityLabel, uniformQuantityLabel } from "@/lib/uniform/arrivalRules";
+import { canEditUniformOrder } from "@/lib/uniform/orderEdit";
+import UniformItemEditForm from "./UniformItemEditForm";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import { askConfirm } from "@/components/ui/feedback";
 
@@ -113,6 +115,8 @@ export default function UniformOrdersClient({
   // 일괄 본사 전송(2026-11-21 원장 «체크해서 한 번에 처리») — 고른 주문 id · 진행 «3/10»
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null);
+  // 신청 내용 수정(2026-11-21) — 상세 패널에서 지금 고치는 학생 줄
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
 
   const visibleOrders = useMemo(() => {
     if (filter === "SENT") {
@@ -450,9 +454,31 @@ export default function UniformOrdersClient({
                   )}
                   <span className="text-xs text-[var(--color-academy-muted)]">사이즈</span>
                   <span>{[item.topSize ? `상의 ${item.topSize}` : "", item.bottomSize ? `하의 ${item.bottomSize}` : ""].filter(Boolean).join(", ") || "-"}</span>
+                  {/* 수정 — 본사에 아직 안 간 신청만(본사 접수 뒤에는 본사에 직접 요청) */}
+                  {canEditUniformOrder(d) && editingItemId !== item.id && (
+                    <span className="col-span-2 mt-1">
+                      <button type="button" className="academy-button-text academy-button-sm" disabled={bulkProgress !== null || isPending} onClick={() => setEditingItemId(item.id)}>
+                        내용 수정
+                      </button>
+                    </span>
+                  )}
+                  {editingItemId === item.id && (
+                    <UniformItemEditForm
+                      item={item}
+                      onCancel={() => setEditingItemId(null)}
+                      onDone={(message) => {
+                        setEditingItemId(null);
+                        setFeedback({ type: "success", message });
+                        router.refresh();
+                      }}
+                    />
+                  )}
                 </li>
               ))}
             </ul>
+            {!canEditUniformOrder(d) && (
+              <p className="mt-3 text-xs text-[var(--color-academy-muted)]">본사에 접수된 신청은 여기서 고칠 수 없어요. 바꿀 내용은 본사에 직접 요청해 주세요.</p>
+            )}
             <div className="mt-5 flex flex-wrap gap-2">{renderRetryButton(d)}</div>
           </ListDetailPanel>
         );
