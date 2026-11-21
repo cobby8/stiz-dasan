@@ -137,6 +137,7 @@ export default function PublicHeader({
   // 모바일 메뉴(서랍)가 열린 동안 챗봇·입학 가이드 플로팅 버튼을 숨긴다(게슈탈트 C-P3)
   // 휴대폰 «뒤로» = 메뉴 닫기. 메뉴 안 링크는 기록 칸을 먼저 되돌린 뒤 이동(captureLinks)
   const router = useRouter();
+  const pathname = usePathname();
   const { captureLinks } = usePublicOverlayOpen(isMobileMenuOpen, () => setIsMobileMenuOpen(false));
   const mobileMenuRef = useRef<HTMLDivElement>(null);
   const mobileMenuTriggerRef = useRef<HTMLButtonElement>(null);
@@ -266,7 +267,9 @@ export default function PublicHeader({
         <div ref={rowRef} className="public-header-row max-w-6xl mx-auto px-4 py-3 md:py-4 flex items-center justify-between">
           {/* 로고 + 지점명 */}
           <div ref={brandRef} className="flex min-w-0 items-center gap-2 sm:gap-3">
-            <AppBackButton fallbackHref="/" size="sm" />
+            {/* 2026-11-20 원장 지시: 컴퓨터 화면은 브라우저 뒤로 버튼이 있으니 «←»를 휴대폰 폭에서만, 홈(첫 화면)에서는 어디서도 안 보인다
+                — 넓은 화면에서 «←» 자리가 메뉴를 «전체 메뉴»로 접히게 만들었다 */}
+            {pathname !== "/" && <AppBackButton fallbackHref="/" size="sm" className="md:hidden" />}
             <Link href="/" className="flex min-w-0 items-center gap-2 sm:gap-3">
               <Image
                 src="/stiz-logo.png"
