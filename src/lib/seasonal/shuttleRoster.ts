@@ -331,13 +331,20 @@ export async function getConfirmedShuttleRoster(seasonId?: string | null): Promi
   // ★ 판정은 «시즌마다» 한다(R-7②, 2026-11-10). 예전엔 보관 안 된 시즌 중 하나라도 확정본이 있으면
   //   전체를 확정본으로만 읽어, 다음 시즌(확정 전) 신청자가 기사님 명단·학부모 화면·안내에서 통째로 빠졌다.
   //   확정한 시즌 = 확정본만, 확정 전 시즌 = 원본 폴백. 한 시즌 안에서는 여전히 둘을 섞지 않는다.
-  if (!(await confirmedModeEnabled())) return fallbackSeasonRoster(seasonId);
-  const confirmedSeasons = await confirmedSeasonIds(seasonId);
+  // 2026-11-20 속도: 서로 기다릴 필요 없는 조회를 같이 출발시킨다(DB 왕복 4번 차례 → 2번).
+  //   학부모 홈이 열릴 때마다 이 함수를 불러, 운영에서 셔틀 조회가 0.6초로 홈 전체를 붙잡고 있었다.
+  //   결과·판정 순서는 그대로다 — 켜짐 확인이 꺼짐이면 같이 읽은 시즌 목록은 버리고 폴백한다.
+  //   (저장해 두기(캐시)는 쓰지 않는다: 킬 스위치·명단 수정이 즉시 반영돼야 하고 기사님 화면도 이 함수를 쓴다.)
+  const [modeOn, confirmedSeasons] = await Promise.all([confirmedModeEnabled(), confirmedSeasonIds(seasonId)]);
+  if (!modeOn) return fallbackSeasonRoster(seasonId);
   if (confirmedSeasons.length === 0) return fallbackSeasonRoster(seasonId);
-  const confirmedRows = await confirmedSeasonRoster(confirmedSeasons);
   // 시즌을 지정했으면 그 시즌은 확정본이 정본이다(결과가 빈 목록이어도 그대로 — "아무도 안 태운다"가 원장의 결정).
-  if (seasonId) return confirmedRows;
-  const pendingRows = await fallbackSeasonRoster(null, confirmedSeasons);
+  if (seasonId) return confirmedSeasonRoster(confirmedSeasons);
+  // 확정 시즌 명단과 «아직 확정 전» 시즌 명단도 서로 기다릴 필요가 없다
+  const [confirmedRows, pendingRows] = await Promise.all([
+    confirmedSeasonRoster(confirmedSeasons),
+    fallbackSeasonRoster(null, confirmedSeasons),
+  ]);
   if (pendingRows.length === 0) return confirmedRows;
   return sortRosterEntries([...confirmedRows, ...pendingRows]);
 }
