@@ -39,7 +39,7 @@ import type {
   StaffSessionStudent,
 } from "@/lib/staff-session-queries";
 import { userErrorMessage } from "@/components/staff/userErrorMessage";
-import { bulkReportedNotice, splitBulkPresent, staffReloginHref } from "@/lib/staff-session-rules";
+import { bulkReportedNotice, defaultPublishOnComplete, finishBlockedMessage, FINISH_SLOW_MESSAGE, LATE_COMPLETE_NOTICE, SLOW_RESPONSE_MS, splitBulkPresent, staffReloginHref } from "@/lib/staff-session-rules";
 import { askConfirm, showNotice } from "@/components/ui/feedback";
 import { markNextScopeNavigationAsReplace } from "@/lib/navigation/inAppHistory";
 // 2026-11-18 뒤로 가기: 창은 «뒤로»로 창만 닫히고, 수업 가드는 창 칸이 빠지는 것을 «나가기»로 보지 않는다
@@ -219,7 +219,17 @@ function LiveSessionWorkspace({
   const [showPlan, setShowPlan] = useState(false);
   // 한 줄 저장·음성 변환 중에는 수업 종료를 잠근다(메모와 같은 원칙)
   const [feedBusy, setFeedBusy] = useState(false);
-  const [publishReport, setPublishReport] = useState(true);
+  // 지난 날짜 수업(어제 못 끝낸 수업)을 뒤늦게 끝낼 때는 기본을 끈다(2026-11-20) — 선생님이 켜면 발행된다(학부모 알림은 안 나간다).
+  // 수업일·오늘은 서버가 DB 시계로 준 값(sessionYmd·todayYmd)이라 휴대폰 시계와 무관하다.
+  const lateSession = !defaultPublishOnComplete(session.sessionYmd, session.todayYmd);
+  // 체크는 «선생님이 만졌을 때만» 값으로 보낸다(null = 안 만짐 → 서버가 DB 시계로 정한다).
+  // 밤새 열어 둔 화면은 lateSession 이 어제 기준이라, 화면 기본값을 그대로 보내면 «늦은 종료는 발행 안 함»이 안 먹는다.
+  const [publishChoice, setPublishChoice] = useState<boolean | null>(null);
+  const publishReport = publishChoice ?? !lateSession;
+  // 연결 끊김 안내를 이미 한 번 보였는가(종료 창을 열 때마다 처음부터) — 보인 뒤 다시 누르면 요청을 보낸다
+  const offlineWarnedRef = useRef(false);
+  // 종료 요청에 오래 응답이 없다 — 종료 창 안에 안내와 «새로 고침»을 보인다
+  const [finishSlow, setFinishSlow] = useState(false);
   const [billingStudent, setBillingStudent] = useState<{ id: string; name: string } | null | undefined>(undefined);
   const [feeData, setFeeData] = useState<{ month: string; items: StaffMonthlyFeeSummary[] } | null>(null);
   const [feeLoading, setFeeLoading] = useState(true);
@@ -252,6 +262,8 @@ function LiveSessionWorkspace({
     setFinishError("");
     setEditReport(!report.trim() || lessonPrefilled);
     setShowEndConfirm(true);
+    // 연결 끊김 안내는 창을 열 때마다 처음부터(한 번 보이고, 다시 누르면 보낸다)
+    offlineWarnedRef.current = false;
   }
 
   // 수업 계획을 «수업 내용» 칸에 채운다 — 저장은 «수업 내용 저장» 또는 수업 종료 때 한다.
@@ -265,6 +277,15 @@ function LiveSessionWorkspace({
     setPrefillSource(filled);
   }
   useStaffDialog(showEndConfirm, endDialogRef, closeEndDialog, !pending);
+  // 종료 확인 창이 열린 채 처리 중(pending)이 SLOW_RESPONSE_MS 넘게 이어지면 «응답이 늦습니다»를 보인다. 처리가 풀리면 타이머·안내를 정리한다
+  useEffect(() => {
+    if (!pending || !showEndConfirm) return;
+    const timer = window.setTimeout(() => setFinishSlow(true), SLOW_RESPONSE_MS);
+    return () => {
+      window.clearTimeout(timer);
+      setFinishSlow(false);
+    };
+  }, [pending, showEndConfirm]);
   // 휴대폰 «뒤로» = 종료 확인 창만 닫힌다. 종료 처리 중(pending)에는 뒤로를 눌러도 닫히지 않는다
   useBackToClose(showEndConfirm, closeEndDialog, { blocked: pending });
   // 수업 주소: 종료·시작 취소가 끝난 뒤 나갈 곳. 값이 생기면 아래 «나가기» effect 가 가드 칸을 걷고 이동한다
@@ -783,7 +804,17 @@ function LiveSessionWorkspace({
   }
 
   function finishSession() {
-    if (pending || exiting || voiceBusy || memoStatus === "saving") return;
+    // 이미 종료 처리 중이면 두 번 보내지 않는다(버튼에 «종료 처리 중…»이 보인다)
+    if (pending || exiting) return;
+    // 지금 종료할 수 없는 상태면 말없이 끝내지 않고 이유를 종료 창 안에 보인다(2026-11-20).
+    // 예전엔 여기서 조용히 return 해, 눌러도 아무 반응이 없어 «종료한 줄 알고» 나가는 일이 있었다.
+    // 연결 끊김은 한 번만 막는다 — 휴대폰의 연결 표시가 틀릴 때 영영 못 끝내지 않게, 다시 누르면 그대로 보낸다.
+    const blockedMessage = finishBlockedMessage({ voiceBusy, memoSaving: memoStatus === "saving", online, offlineWarned: offlineWarnedRef.current });
+    if (blockedMessage) {
+      if (!online) offlineWarnedRef.current = true;
+      setFinishError(blockedMessage);
+      return;
+    }
     setFinishError("");
     startTransition(async () => {
       try {
@@ -796,7 +827,8 @@ function LiveSessionWorkspace({
         const result = await completeClassSession({
           sessionId: session.id,
           report,
-          publishReport,
+          // 체크를 만졌을 때만 보낸다 — 안 만졌으면 서버가 «오늘 수업 = 발행, 지난 날짜 수업 = 발행 안 함»으로 정한다
+          publishReport: publishChoice ?? undefined,
         });
         if (!result.ok) {
           setFinishError(result.message);
@@ -1162,7 +1194,8 @@ function LiveSessionWorkspace({
         <div className="fixed inset-0 z-50 flex items-end bg-black/50 p-4 sm:items-center sm:justify-center" role="dialog" aria-modal="true" aria-labelledby="end-session-title">
           <div ref={endDialogRef} className="max-h-[calc(100dvh-2rem)] min-h-0 w-full max-w-md overflow-y-auto rounded-2xl bg-white p-5 shadow-xl">
             <h2 id="end-session-title" className="text-xl font-bold">수업을 종료하시겠습니까?</h2>
-            <p className="mt-1 text-sm text-[var(--color-academy-muted)]">종료하면 학부모에게 수업 종료 알림이 전송됩니다.</p>
+            {/* 지난 날짜 수업은 종료 알림이 나가지 않는다 — «전송됩니다»라고 말하지 않는다(2026-11-20) */}
+            <p className="mt-1 text-sm text-[var(--color-academy-muted)]">{lateSession ? "지난 날짜 수업을 종료합니다." : "종료하면 학부모에게 수업 종료 알림이 전송됩니다."}</p>
             <div className="mt-4 grid grid-cols-4 gap-2 text-center text-xs font-medium tabular-nums">
               <div className="rounded-lg bg-[var(--color-academy-success-soft)] p-2 text-[var(--color-academy-success)]">출석 {counts.PRESENT}</div>
               <div className="rounded-lg bg-[var(--color-academy-warning-soft)] p-2 text-[var(--color-academy-warning)]">지각 {counts.LATE}</div>
@@ -1214,20 +1247,30 @@ function LiveSessionWorkspace({
                   <input
                     type="checkbox"
                     checked={publishReport}
-                    onChange={(event) => setPublishReport(event.target.checked)}
+                    onChange={(event) => setPublishChoice(event.target.checked)}
                     className="size-5"
                   />
                   학부모에게 바로 보내기
                 </label>
+                {lateSession && <p className="text-xs text-[var(--color-academy-muted)]">{LATE_COMPLETE_NOTICE}</p>}
               </div>
             )}
             {finishError && <p role="alert" aria-live="assertive" className="mt-3 rounded-xl bg-[var(--color-academy-danger-soft)] p-3 text-sm text-[var(--color-academy-danger)]">{finishError}</p>}
+            {/* 종료 요청에 오래 응답이 없을 때 — «종료 처리 중…»에 멈춘 채 화면을 닫아 수업이 진행 중으로 남는 일을 막는다(2026-11-20) */}
+            {finishSlow && (
+              <div role="status" className="mt-3 rounded-xl bg-[var(--color-academy-warning-soft)] p-3 text-sm text-[var(--color-academy-warning)]">
+                <p>{FINISH_SLOW_MESSAGE}</p>
+                <button type="button" onClick={() => window.location.reload()} className="academy-button-secondary mt-2 min-h-11 w-full">새로 고침</button>
+              </div>
+            )}
             <div className="mt-5 grid grid-cols-2 gap-2">
               <button type="button" disabled={pending || exiting} data-dialog-initial-focus onClick={() => setShowEndConfirm(false)} className="academy-button-secondary">돌아가기</button>
               {counts.UNCHECKED > 0 ? (
                 <button type="button" disabled={pending} onClick={() => { setShowEndConfirm(false); scrollToRoster(); }} className="academy-button-primary">명단으로 가기</button>
               ) : (
-                <button type="button" disabled={pending || exiting || voiceBusy || memoStatus === "saving" || !online} aria-busy={pending || exiting || memoStatus === "saving"} onClick={finishSession} className="academy-button-danger-solid">{pending || exiting ? "종료 처리 중…" : memoStatus === "saving" ? "메모 저장 중…" : "종료 확인"}</button>
+                // 음성 입력 중·메모 저장 중·연결 끊김일 때도 버튼을 끄지 않는다 — 누르면 finishSession 이 이유를 위 칸(finishError)에 보인다.
+                // 꺼 두면 눌러도 아무 반응이 없어 선생님이 종료된 줄 안다(2026-11-20). 처리 중(pending·exiting)에만 끈다.
+                <button type="button" disabled={pending || exiting} aria-busy={pending || exiting || memoStatus === "saving"} onClick={finishSession} className="academy-button-danger-solid">{pending || exiting ? "종료 처리 중…" : memoStatus === "saving" ? "메모 저장 중…" : "종료 확인"}</button>
               )}
             </div>
           </div>

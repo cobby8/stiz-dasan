@@ -114,7 +114,10 @@ test("b4 코치 미연결은 «오늘 수업 없음»과 다른 안내", () => {
 });
 
 test("b6 진행 중 수업으로 이동하기 전에 안내를 보인다", () => {
-  assert.match(home, /askConfirm\(`\$\{result\.message\}\\n\\n그 수업 화면으로 이동할까요\?`\)/);
+  // 2026-11-20: 확인 창(askConfirm) 대신 안내 창 — 서버 문구를 그대로 보이고 «그 수업 종료하기»·«그 수업 화면 열기»를 고른다
+  assert.match(home, /setBlocking\(\{ sessionId: result\.activeSessionId, message: result\.message, className: result\.activeClassName \?\? null, isPast: result\.activeIsPast === true \}\);/);
+  assert.match(home, /<BlockingSessionDialog\s+target=\{blocking\}/);
+  assert.doesNotMatch(home, /askConfirm\(`\$\{result\.message\}/);
 });
 
 test("G11 특강 미리 작성은 회차를 보내고, 사진 권한은 수업 시작·출석과 같은 함수", () => {

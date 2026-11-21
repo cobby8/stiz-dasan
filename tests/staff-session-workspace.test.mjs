@@ -20,7 +20,9 @@ const actions = read("src/app/actions/staff-sessions.ts");
 
 /** export async function <name> 의 본문(다음 최상위 닫는 중괄호까지) */
 function functionBody(source, name) {
-  const start = source.indexOf(`export async function ${name}`);
+  // 공개 서버 기능(export) 또는 파일 안 본체(export 없음 — 예: completeSessionCore)
+  let start = source.indexOf(`export async function ${name}`);
+  if (start < 0) start = source.indexOf(`\nasync function ${name}(`);
   assert.ok(start >= 0, `${name} 를 찾아야 한다`);
   const end = source.slice(start).search(/\r?\n\}\r?\n/);
   return source.slice(start, start + end);
@@ -185,7 +187,9 @@ test("종료 잠금·확인 창·이동 전 저장은 그대로, 홈에서는 �
   assert.match(workspace, /onClick=\{finishSession\} className="academy-button-danger-solid"/);
   assert.match(workspace, /onClick=\{\(\) => \{ setShowEndConfirm\(false\); scrollToRoster\(\); \}\}/);
   // 미확인 출결이 있으면 종료를 거절하는 서버 규칙은 그대로
-  assert.match(functionBody(actions, "completeClassSession"), /출결을 확인하지 않은 학생이 있습니다\(보강 온 아이 포함\)\./);
+  // (2026-11-20: 종료 본체가 completeSessionCore 로 옮겨졌다 — 공개 completeClassSession 은 그 본체를 부른다)
+  assert.match(functionBody(actions, "completeClassSession"), /return completeSessionCore\(\{ sessionId: input\.sessionId, report: input\.report, publishReport: input\.publishReport \}, false\);/);
+  assert.match(functionBody(actions, "completeSessionCore"), /출결을 확인하지 않은 학생이 있습니다\(보강 온 아이 포함\)\./);
   // 수업 주소 전용: 뒤로 가기 확인. 홈에 끼운 칸은 이력을 건드리지 않는다
   assert.match(workspace, /if \(embedded\) return;\s*const guardKey = `staff-session-\$\{session\.id\}`;/);
   assert.match(workspace, /window\.addEventListener\("staff:prepare-navigation", prepareToLeave\)/);
@@ -265,10 +269,11 @@ test("음성 버튼: 스토어 앱에서는 말없이 숨지 않고 이유 한 �
 
 test("홈은 수업 줄을 누르거나 수업을 시작해도 수업 주소로 이동하지 않는다(어제 못 끝낸 수업만 예외)", () => {
   const pushes = [...home.matchAll(/router\.push\(`\/staff\/sessions\/[^`]*`\)/g)].map((m) => m[0]);
-  assert.deepEqual(pushes, ["router.push(`/staff/sessions/${result.activeSessionId}`)"], "남는 이동은 «어제 못 끝낸 수업» 하나뿐이다");
+  assert.deepEqual(pushes, ["router.push(`/staff/sessions/${blocking.sessionId}`)"], "남는 이동은 «어제 못 끝낸 수업» 하나뿐이다");
   assert.doesNotMatch(home, /view=attendance/);
-  // 그 이동도 확인 창을 거친다
-  assert.match(home, /askConfirm\(`\$\{result\.message\}\\n\\n그 수업 화면으로 이동할까요\?`\)\)\) \{\s*router\.push\(`\/staff\/sessions\/\$\{result\.activeSessionId\}`\);/);
+  // 그 이동도 안내 창을 거친다(2026-11-20: 확인 창 → «그 수업 종료하기»·«그 수업 화면 열기» 안내 창). 말없이 넘기지 않는다
+  assert.match(home, /setBlocking\(\{ sessionId: result\.activeSessionId, message: result\.message, className: result\.activeClassName \?\? null, isPast: result\.activeIsPast === true \}\);\s*return;/);
+  assert.match(home, /<BlockingSessionDialog\s+target=\{blocking\}[\s\S]{0,700}onOpenSession=\{\(\) => router\.push\(`\/staff\/sessions\/\$\{blocking\.sessionId\}`\)\}/);
   // 수업 시작 → 그 줄이 «수업 중»으로 바뀌고 출석부 칸이 펼쳐진다
   assert.match(home, /patchLesson\(started\.scheduleKey, \{ sessionId: result\.sessionId, sessionStatus: "IN_PROGRESS", startedAt: result\.startedAt \}\);\s*setJustStartedId\(result\.sessionId\);\s*setExpandedKey\(started\.scheduleKey\);/);
   assert.match(home, /initialView=\{justStartedId === sessionId \? "attendance" : "main"\}/);
@@ -358,10 +363,10 @@ test("필수 1: 미리 쓴 내용을 채운 그대로 종료하려 하면 종료
   // 종료 확인 창: 글칸(session-report) 바로 뒤에 경고가 있고, 그 글칸은 같은 값(report)을 바로 고친다
   assert.match(workspace, /id="session-report"\s+value=\{report\}\s+onChange=\{\(event\) => setReport\(event\.target\.value\)\}[\s\S]{0,700}\{lessonPrefilled && \(\s*<p role="alert"[^>]*>\{PLAN_PREFILL_END_NOTICE\}<\/p>/);
   // 종료는 그 값만 보낸다 — 미리 쓴 내용(plannedContent)을 따로 넣지 않는다
-  assert.match(workspace, /completeClassSession\(\{[\s\S]{0,200}report,\s*publishReport,\s*\}\)/);
+  assert.match(workspace, /completeClassSession\(\{[\s\S]{0,200}report,\s*(?:\/\/[^\n]*\s*)*publishReport: publishChoice \?\? undefined,\s*\}\)/);
   assert.doesNotMatch(workspace, /completeClassSession\(\{[\s\S]{0,300}plannedContent/);
   // 서버: 보낸 값이 비면 지움(NULL) — 빈 값으로 종료하면 학부모에게 글이 나가지 않는다
-  const finish = functionBody(actions, "completeClassSession");
+  const finish = functionBody(actions, "completeSessionCore");
   assert.match(finish, /const report = \(input\.report \?\? ""\)\.trim\(\)\.slice\(0, 2000\) \|\| null;/);
   assert.match(finish, /content = CASE WHEN \$5 THEN \$3 ELSE content END/);
   // 저장하면 채움 상태가 풀린다

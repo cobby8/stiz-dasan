@@ -9,6 +9,7 @@ import test from "node:test";
 
 const action = await readFile("src/app/actions/staff-sessions.ts", "utf8");
 const client = await readFile("src/app/staff/sessions/[sessionId]/SessionInProgressClient.tsx", "utf8");
+const rules = await readFile("src/lib/staff-session-rules.ts", "utf8");
 
 test("수업 종료와 리포트 발행이 한 번의 UPDATE 로 끝난다", () => {
   // 두 번에 나누면 종료는 됐는데 발행만 실패하는 반쪽 상태가 생긴다.
@@ -25,11 +26,17 @@ test("종료 창이 보낸 한 줄을 그대로 반영한다(지우고 종료하
   assert.doesNotMatch(action, /content = COALESCE\(\$3, content\)/);
 });
 
-test("발행 여부는 화면이 정하고, 값이 없으면 발행한다", () => {
+test("발행 여부는 화면이 정하고, 값이 없으면 발행한다(지난 날짜 수업만 예외)", () => {
   // 기본을 끄면 지금처럼 아무도 발행하지 않아 학부모 화면이 계속 빈다.
-  assert.match(action, /input\.publishReport !== false/);
-  assert.match(client, /useState\(true\)/);
-  assert.match(client, /completeClassSession\(\{[\s\S]{0,120}report,[\s\S]{0,60}publishReport,/);
+  // 2026-11-20: 판정이 규칙 함수(shouldPublishOnComplete)로 옮겨졌다 — 오늘 수업은 «값이 없으면 발행» 그대로,
+  // 지난 날짜 수업(늦은 종료)만 화면이 켰을 때 발행한다. 실행 검증은 tests/class-end-stuck.test.mjs.
+  assert.match(action, /const publish = !cleanup && shouldPublishOnComplete\(\{ sessionYmd, todayYmd, publishReport: input\.publishReport \}\);/);
+  assert.match(rules, /return late \? input\.publishReport === true : input\.publishReport !== false;/);
+  // 화면 기본값: 오늘 수업이면 켬(지난 날짜 수업이면 끔). 선생님이 체크를 만졌을 때만 그 값을 보낸다 —
+  // 안 만졌으면 값을 보내지 않아(undefined) 서버가 DB 시계로 정한다(밤새 열어 둔 화면의 «어제 기준» 기본값이 나가지 않게).
+  assert.match(client, /const lateSession = !defaultPublishOnComplete\(session\.sessionYmd, session\.todayYmd\);/);
+  assert.match(client, /const \[publishChoice, setPublishChoice\] = useState<boolean \| null>\(null\);\s*const publishReport = publishChoice \?\? !lateSession;/);
+  assert.match(client, /completeClassSession\(\{[\s\S]{0,120}report,[\s\S]{0,160}publishReport: publishChoice \?\? undefined,/);
 });
 
 test("수업 종료 알림이 실제로 있는 화면을 가리킨다", () => {

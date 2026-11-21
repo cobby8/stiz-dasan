@@ -6,7 +6,9 @@ import { startClassSession } from "@/app/actions/staff-sessions";
 import { addDaysKst } from "@/lib/datetime/kst";
 import type { StaffTodayClass } from "@/lib/staff-session-queries";
 import { userErrorMessage } from "@/components/staff/userErrorMessage";
-import { askConfirm } from "@/components/ui/feedback";
+import { blockingFinishedNotice } from "@/lib/staff-session-rules";
+// 2026-11-20: 끝내지 못한 수업 때문에 시작이 막혔을 때 그 자리에서 끝내는 안내 창(홈과 같은 부품)
+import { BlockingSessionDialog, type BlockingSession } from "@/components/staff/BlockingSessionDialog";
 
 // 특강 카드 1장 = 홈과 동일한 반 단위 항목(StaffTodayClass).
 // 버그#2 수정: offering별로 쪼개지 않고 반+시간으로 묶인 목록을 그대로 사용한다.
@@ -24,6 +26,10 @@ export default function StaffSeasonalClient({ initial }: { initial: { ymd: strin
   const [ymd, setYmd] = useState<string>(initial.ymd);
   const [dates, setDates] = useState<SeasonalClass[]>(initial.classes || []);
   const [err, setErr] = useState("");
+  // 완료 안내 한 줄(막고 있던 수업을 종료했을 때)
+  const [notice, setNotice] = useState("");
+  // 다른 수업 시작을 막고 있는 진행 중 수업 — 안내 창을 띄운다
+  const [blocking, setBlocking] = useState<BlockingSession | null>(null);
   // 어떤 카드에서 "수업 시작"이 진행 중인지(중복 클릭·로딩 표시용)
   const [startingId, setStartingId] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -55,6 +61,7 @@ export default function StaffSeasonalClient({ initial }: { initial: { ymd: strin
       return;
     }
     setErr("");
+    setNotice("");
     setStartingId(row.sessionDateId);
     startTransition(async () => {
       const result = await startClassSession({
@@ -64,13 +71,10 @@ export default function StaffSeasonalClient({ initial }: { initial: { ymd: strin
       });
       if (!result.ok) {
         if (result.code === "ACTIVE_SESSION" && result.activeSessionId) {
-          // 어제 끝내지 못한 수업일 수 있다(2026-11-13 b6) — «○○반(○월 ○일) 수업이 아직 진행 중» 을 먼저 보이고 이동.
-          if ((await askConfirm(`${result.message}\n\n그 수업 화면으로 이동할까요?`))) {
-            router.push(`/staff/sessions/${result.activeSessionId}`);
-          } else {
-            setErr(result.message);
-            setStartingId(null);
-          }
+          // 어제 끝내지 못한 수업일 수 있다(2026-11-13 b6) — «○○반(○월 ○일) 수업이 아직 진행 중» 안내 창에서
+          // «그 수업 종료하기»·«그 수업 화면 열기»를 고른다(2026-11-20. 예전엔 이동할지만 물었다).
+          setBlocking({ sessionId: result.activeSessionId, message: result.message, className: result.activeClassName ?? null, isPast: result.activeIsPast === true });
+          setStartingId(null);
           return;
         }
         setErr(result.message);
@@ -96,7 +100,22 @@ export default function StaffSeasonalClient({ initial }: { initial: { ymd: strin
         </button>
       </div>
 
+      {notice && <p role="status" className="mb-3 rounded-lg bg-[var(--color-academy-success-soft)] px-3 py-2 text-sm font-medium text-[var(--color-academy-success)]">{notice}</p>}
       {err && <div className="mb-3 rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm font-medium text-[var(--color-academy-danger)]">{err}</div>}
+
+      {blocking && (
+        <BlockingSessionDialog
+          target={blocking}
+          // 닫기만 하면 막힌 이유를 화면에 남긴다(예전의 «이동 안 함»과 같다)
+          onClose={() => { setErr(blocking.message); setBlocking(null); }}
+          // 종료 성공 — 창을 닫고 안내 한 줄, 목록을 새로 읽는다(그 수업이 이 목록에 있으면 «완료»로 바뀐다). 새 수업은 자동으로 시작하지 않는다
+          onFinished={() => {
+            setBlocking(null);
+            void loadDay(ymd).then(() => setNotice(blockingFinishedNotice(blocking.className)));
+          }}
+          onOpenSession={() => router.push(`/staff/sessions/${blocking.sessionId}`)}
+        />
+      )}
 
       {dates.length === 0 ? (
         <p className="rounded-xl border border-dashed border-[var(--color-academy-line)] p-5 text-center text-sm text-[var(--color-academy-muted)]">

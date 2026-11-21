@@ -194,7 +194,8 @@ test("코치·관리자 출결 저장이 같은 결석 사유 함수를 쓴다(�
 test("수업 종료: 출결을 안 찍은 보강 아이가 있으면 종료를 막는다(명단과 같은 makeupOnClassDateSql)", () => {
   const end = staff.slice(staff.indexOf("export async function completeClassSession"));
   assert.match(end, /FROM "MakeupSession" ms[\s\S]*?makeupOnClassDateSql\("ms", "\$1", "\$3"\)[\s\S]*?NOT EXISTS \(SELECT 1 FROM "Attendance" a WHERE a\."sessionId" = \$2 AND a\."studentId" = ms\."studentId"\)/);
-  assert.match(end, /Number\(missing\[0\]\?\.count \?\? 0\) \+ Number\(missingMakeup\[0\]\?\.count \?\? 0\) > 0/);
+  // 2026-11-20: 합계를 변수로 뺐다(종료 거부 기록에 미확인 인원 수를 남기려고) — 반 학생 + 보강 아이 합이 1명이라도 있으면 막는다
+  assert.match(end, /const missingCount = Number\(missing\[0\]\?\.count \?\? 0\) \+ Number\(missingMakeup\[0\]\?\.count \?\? 0\);\s*if \(missingCount > 0\) \{[\s\S]{0,260}return \{ ok: false as const, message: "출결을 확인하지 않은 학생이 있습니다\(보강 온 아이 포함\)\." \};/);
   // 종료 UPDATE 보다 검사가 먼저
   assert.ok(end.indexOf("missingMakeup") < end.search(/SET status = 'COMPLETED'/));
 });

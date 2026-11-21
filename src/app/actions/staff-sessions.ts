@@ -26,11 +26,17 @@ import {
   SEAT_RECORD_WARNING_MESSAGE,
   STALE_DATE_MESSAGE,
   TRIAL_BULK_SKIPPED_MESSAGE,
+  BLOCKING_NOT_PAST_MESSAGE,
+  BLOCKING_NOT_STARTER_MESSAGE,
   activeSessionNotice,
+  canCleanupFinish,
+  canFinishBlockingSession,
   canPlanOnDate,
   classDayKeyOf,
+  completeRefusalLog,
   parseTrialRosterKey,
   shouldNotifyParentsForSession,
+  shouldPublishOnComplete,
   staffAccessFailure,
   trialLeadStatusAfterStaffMark,
 } from "@/lib/staff-session-rules";
@@ -1323,14 +1329,68 @@ export async function completeClassSession(input: {
   sessionId: string;
   /** 오늘 수업 한 줄(선택). 비워도 출결·사진만으로 리포트가 된다. */
   report?: string;
-  /** 학부모에게 바로 보낼지. 화면에서 기본 켬. */
+  /**
+   * 학부모에게 바로 보낼지. 선생님이 체크를 만졌을 때만 값이 온다 — 안 만졌으면(undefined) 서버가 DB 시계로 정한다
+   * (오늘 수업 = 발행, 지난 날짜 수업 = 발행 안 함 — shouldPublishOnComplete).
+   */
   publishReport?: boolean;
 }) {
+  // 화면이 보낸 객체를 그대로 넘기지 않는다 — 아는 칸만 골라 넘긴다(«정리용» 표시를 바깥에서 끼워 넣지 못하게).
+  return completeSessionCore({ sessionId: input.sessionId, report: input.report, publishReport: input.publishReport }, false);
+}
+
+/**
+ * 막힌 자리의 «그 수업 종료하기»(2026-11-20 원장 승인).
+ * 다른 수업을 시작하려는데 «○○반 수업이 아직 진행 중입니다. 먼저 끝내 주세요.»로 막혔을 때, 그 수업을 그 자리에서 끝낸다.
+ * 수업 종료와 같은 본체(completeSessionCore)를 «정리용»으로 부른다 — 권한·출결 미확인 검사는 그대로,
+ * 지난 날짜 수업만·본인이 시작한 수업만, 학부모 알림·리포트 발행 없음. 수업 내용(한 줄)은 넘기지 않아 저장된 값이 그대로 남는다.
+ */
+export async function completeBlockingSession(input: { sessionId: string }) {
+  return completeSessionCore({ sessionId: input.sessionId, publishReport: false }, true);
+}
+
+/**
+ * 수업 종료 본체 — 공개 서버 기능(completeClassSession·completeBlockingSession)만 부른다(export 하지 않는다).
+ * cleanup = 정리용 종료: 지난 날짜 수업만, 본인이 시작한 수업만, 학부모 알림·리포트 발행 없음.
+ * 이 값은 화면이 정하지 못한다(공개 함수가 고정해서 넘긴다).
+ */
+async function completeSessionCore(
+  input: { sessionId: string; report?: string; publishReport?: boolean },
+  cleanup: boolean,
+) {
+  // 종료를 거부할 때마다 서버 기록에 한 줄 남긴다(2026-11-20) — 예전엔 ok:false 가 기록에 남지 않아
+  // «종료를 눌렀다는데 진행 중으로 남은» 수업의 원인을 찾을 수 없었다. 수업 id·사유 코드·미확인 인원 수만(개인정보 없음).
   const gate = await trySessionAccess(input.sessionId);
-  if (!gate.ok) return gate;
+  if (!gate.ok) {
+    console.warn("[completeClassSession] 종료 거부", completeRefusalLog({ sessionId: input.sessionId, reason: "GATE" }));
+    return gate;
+  }
   const { session, access } = gate;
+  const sessionYmd = String(session.date).slice(0, 10);
   if (session.status === "COMPLETED") return { ok: true as const, completed: true, resumed: true };
-  if (session.status !== "IN_PROGRESS") return { ok: false as const, message: "시작한 수업만 종료할 수 있습니다." };
+  if (session.status !== "IN_PROGRESS") {
+    console.warn("[completeClassSession] 종료 거부", completeRefusalLog({ sessionId: input.sessionId, reason: "NOT_IN_PROGRESS" }));
+    return { ok: false as const, message: "시작한 수업만 종료할 수 있습니다." };
+  }
+  // 오늘(KST) — DB 시계. 못 읽어도 종료 자체가 실패하지 않게 빈 값으로 받는다:
+  // 일반 종료는 «오늘을 모르면 기존 규칙(끄지 않았으면 발행)», 정리용 종료는 «모르면 거부»(canCleanupFinish).
+  const todayYmd = await todayKstFromDb().catch(() => "");
+  if (cleanup) {
+    // 정리용 종료는 «지난 날짜 수업»만(2026-11-20 검수 결정) — 오늘 수업이 알림·리포트 없이 끝나 버리지 않게.
+    if (!canCleanupFinish({ sessionYmd, todayYmd })) {
+      console.warn("[completeClassSession] 종료 거부", completeRefusalLog({ sessionId: input.sessionId, reason: "NOT_PAST" }));
+      return { ok: false as const, message: BLOCKING_NOT_PAST_MESSAGE };
+    }
+    // 정리용 종료는 «본인이 시작한 수업»만 — 다른 수업 시작을 막는 기준(startClassSession 의 startedByUserId = 본인)과 같다.
+    const starter = await prisma.$queryRawUnsafe<{ startedByUserId: string | null }[]>(
+      `SELECT "startedByUserId" FROM "Session" WHERE id = $1 LIMIT 1`,
+      input.sessionId,
+    );
+    if (!canFinishBlockingSession({ startedByUserId: starter[0]?.startedByUserId, userId: access.staff.appUserId })) {
+      console.warn("[completeClassSession] 종료 거부", completeRefusalLog({ sessionId: input.sessionId, reason: "NOT_STARTER" }));
+      return { ok: false as const, message: BLOCKING_NOT_STARTER_MESSAGE };
+    }
+  }
 
   const missing = session.sessionDateId
       ? await prisma.$queryRawUnsafe<{ count: bigint }[]>(
@@ -1376,7 +1436,9 @@ export async function completeClassSession(input: {
             AND NOT EXISTS (SELECT 1 FROM "Attendance" a WHERE a."sessionId" = $2 AND a."studentId" = ms."studentId")`,
         session.classId, input.sessionId, session.date,
       );
-  if (Number(missing[0]?.count ?? 0) + Number(missingMakeup[0]?.count ?? 0) > 0) {
+  const missingCount = Number(missing[0]?.count ?? 0) + Number(missingMakeup[0]?.count ?? 0);
+  if (missingCount > 0) {
+    console.warn("[completeClassSession] 종료 거부", completeRefusalLog({ sessionId: input.sessionId, reason: "ATTENDANCE_MISSING", missingCount }));
     return { ok: false as const, message: "출결을 확인하지 않은 학생이 있습니다(보강 온 아이 포함)." };
   }
 
@@ -1387,7 +1449,9 @@ export async function completeClassSession(input: {
   // 2026-11-14 검수: 종료 창은 이미 저장된 한 줄로 채워져 열린다 → 보낸 값을 그대로 반영(빈 값 = 지움 = NULL).
   // 값을 아예 안 보낸 옛 화면(report undefined)만 기존 내용을 지킨다.
   const reportProvided = input.report !== undefined;
-  const publish = input.publishReport !== false;
+  // 발행 판정(2026-11-20): 오늘 수업은 화면이 끄지 않았으면 발행, 지난 날짜 수업(늦은 종료)은 화면이 켰을 때만 발행한다.
+  // «오늘»은 DB 시계(위 todayYmd)로 본다. 정리용 종료는 발행하지 않는다.
+  const publish = !cleanup && shouldPublishOnComplete({ sessionYmd, todayYmd, publishReport: input.publishReport });
   const ended = await prisma.$queryRawUnsafe<{ id: string }[]>(
     `UPDATE "Session"
         SET status = 'COMPLETED', "endedAt" = NOW(), "endedByUserId" = $2, "updatedAt" = NOW(),
@@ -1397,7 +1461,10 @@ export async function completeClassSession(input: {
       WHERE id = $1 AND status = 'IN_PROGRESS' AND "startedAt" IS NOT NULL RETURNING id`,
     input.sessionId, access.staff.appUserId, report, publish, reportProvided,
   );
-  if (!ended[0]) return { ok: false as const, message: "수업 종료 상태를 다시 확인해 주세요." };
+  if (!ended[0]) {
+    console.warn("[completeClassSession] 종료 거부", completeRefusalLog({ sessionId: input.sessionId, reason: "STATE_CHANGED" }));
+    return { ok: false as const, message: "수업 종료 상태를 다시 확인해 주세요." };
+  }
 
   // 종료 즉시 캐시 무효화 — 알림 발송보다 먼저 해야 직원 화면이 날짜 이동 없이도 완료 상태로 바뀐다.
   revalidatePath("/staff");
@@ -1414,7 +1481,8 @@ export async function completeClassSession(input: {
   //   학부모가 많은 반은 «장부 기록 전»에 끊긴 알림이 통째로 빠질 수 있었다(크론도 장부에 없는 건 못 보낸다).
   //   → Next after() 로 «응답 뒤에도 끝까지» 돌게 보장한다. 화면은 기다리지 않는다.
   // ★ b6: 지난 날짜 수업(어제 못 끝낸 수업)을 오늘 정리하면 «수업이 종료되었습니다» 알림은 보내지 않는다.
-  if (shouldNotifyParentsForSession(String(session.date).slice(0, 10))) {
+  // ★ 정리용 종료(cleanup)는 지난 날짜 수업만 받지만(위 NOT_PAST), 여기서도 한 번 더 막아 둔다(2026-11-20).
+  if (!cleanup && shouldNotifyParentsForSession(sessionYmd)) {
     runAfterResponse("completeClassSession", async () => {
       const regularRecipients = await getSessionParentRecipients(session);
       // 보강 온 아이 학부모에게도 같은 안내(2026-11-09 원장 승인) — 반 수강생이 아니라 위 조회로는 안 잡힌다.
@@ -1512,6 +1580,8 @@ export type StartClassSessionResult =
       /** ACTIVE_SESSION 일 때 — 화면이 «○○반(○월 ○일) 수업이 아직 진행 중» 안내를 보이는 데 쓴다(b6). */
       activeClassName?: string;
       activeDate?: string;
+      /** ACTIVE_SESSION 일 때 — 그 수업이 지난 날짜 수업인가(DB 시계 판정). 참일 때만 화면이 «그 수업 종료하기»를 보인다. */
+      activeIsPast?: boolean;
       /** 로그인이 풀려 다시 로그인해야 할 때(b5). */
       needsLogin?: true;
     };
@@ -1625,8 +1695,10 @@ export async function startClassSession(input: {
       }
 
       // 반 이름·수업 날짜도 함께 읽는다 — 어제 끝내지 못한 수업이면 «○○반(○월 ○일)»로 알려 주기 위해(b6).
-      const active = await tx.$queryRawUnsafe<Array<SessionStartRow & { className: string; date: string }>>(
-        `SELECT s.id, s."classId", s.status, s."startedAt", c.name AS "className", s.date::date::text AS date
+      // 지난 날짜 수업인지는 SQL 에서 판정한다(무tz 칼럼 «두 번» 변환한 수업일 < DB 시계의 오늘) — 서버·휴대폰 시계를 쓰지 않는다.
+      const active = await tx.$queryRawUnsafe<Array<SessionStartRow & { className: string; date: string; isPast: boolean | null }>>(
+        `SELECT s.id, s."classId", s.status, s."startedAt", c.name AS "className", s.date::date::text AS date,
+                (${sessionKstDateSql("s")} < ${TODAY_KST_SQL}) AS "isPast"
          FROM "Session" s
          JOIN "Class" c ON c.id = s."classId"
          WHERE s.status = 'IN_PROGRESS'
@@ -1644,6 +1716,7 @@ export async function startClassSession(input: {
           activeSessionId: active[0].id,
           activeClassName: active[0].className,
           activeDate: active[0].date,
+          activeIsPast: active[0].isPast === true,
         };
       }
 
