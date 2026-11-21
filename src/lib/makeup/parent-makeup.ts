@@ -2,7 +2,7 @@ import { childAccessSql } from "@/lib/account/child-access";
 import { prisma } from "@/lib/prisma";
 import { notMergedStudent } from "@/lib/studentVisibility";
 import {
-  makeupGradeFit, matchClassesByGrade, remainingSeatsByDate, summarize,
+  makeupGradeFit, makeupCreditTryOrder, matchClassesByGrade, remainingSeatsByDate, summarize,
   type ClassCandidate, type MakeupCreditStatus, type MakeupEmptyReason,
 } from "./credit-rules";
 // 학생 학년 = 생년월일로 계산(아이 정보 화면과 같은 기준) → 안 되면 학년 글자
@@ -366,35 +366,50 @@ async function seatsLeftInTx(tx: CompensationTransaction, classId: string, dateY
 export async function bookMakeup(
   parentUserId: string,
   input: { creditId: string; classId: string; dateYmd: string },
-): Promise<{ ok: boolean; message: string }> {
+): Promise<{ ok: boolean; message: string; usedAbsenceDate?: Date }> {
   // 형식뿐 아니라 실제로 있는 날짜인지까지(2026-02-30 같은 값은 거절)
   if (!isKstYmd(input.dateYmd)) return { ok: false, message: "날짜가 올바르지 않습니다." };
 
-  const own = await prisma.$queryRawUnsafe<Array<{
-    id: string; studentId: string; originClassId: string | null; absenceDate: Date; expiresAt: Date;
-  }>>(
+  type OwnCredit = { id: string; studentId: string; originClassId: string | null; absenceDate: Date; expiresAt: Date; status: string; sourceType: string };
+  const own = await prisma.$queryRawUnsafe<OwnCredit[]>(
     // 학년은 여기서 읽지 않는다 — 학년·정원 판정은 아래 getMakeupOptionsForCredit 한 곳에서만 한다
-    `SELECT mc.id, mc."studentId", mc."originClassId", mc."absenceDate", mc."expiresAt"
+    `SELECT mc.id, mc."studentId", mc."originClassId", mc."absenceDate", mc."expiresAt", mc.status, mc."sourceType"
        FROM "MakeupCredit" mc JOIN "Student" s ON s.id = mc."studentId"
       WHERE mc.id = $1 AND ${await childAccessSql("s", "$2")} AND mc.status = 'AVAILABLE' LIMIT 1`,
     input.creditId, parentUserId,
   );
-  const credit = own[0];
-  if (!credit) return { ok: false, message: "예약할 수 있는 보강권이 아닙니다." };
+  const picked = own[0];
+  if (!picked) return { ok: false, message: "예약할 수 있는 보강권이 아닙니다." };
 
   // 지난 날짜는 후보를 계산하기 전에 바로 거절한다(KST 날짜 글자끼리 비교)
   if (input.dateYmd < todayKst()) return { ok: false, message: MAKEUP_BOOK_CLOSED_MESSAGE };
 
   // 보강 날짜 = 그 날 KST 자정(공용 모듈 kstAt — 예전 손 조립과 같은 시각)
   const bookAt = new Date(kstAt(input.dateYmd));
-  if (bookAt.getTime() > new Date(credit.expiresAt).getTime()) {
+  if (bookAt.getTime() > new Date(picked.expiresAt).getTime()) {
     return { ok: false, message: "보강권 사용 기간이 지난 날짜입니다." };
   }
 
-  // 반 검증 — 학년·정원을 서버에서 다시 확인한다(클라이언트 값 신뢰 금지).
-  const opts = await getMakeupOptionsForCredit(parentUserId, input.creditId);
-  if (!opts.ok) return { ok: false, message: opts.message };
-  const target = opts.options.find((o) => o.classId === input.classId);
+  // 오래된 보강권부터(2026-11-20 원장 지시): 같은 학생의 더 오래된 결석 보강권이 이 수업·날짜에 쓸 수 있으면 그걸 쓴다.
+  // 후보는 같은 학생·같은 종류·사용 가능·보강 날짜까지 기한 남은 것만. 반·날짜 검증은 각 후보마다 아래 함수 한 곳에서 한다.
+  const siblings = await prisma.$queryRawUnsafe<OwnCredit[]>(
+    `SELECT mc.id, mc."studentId", mc."originClassId", mc."absenceDate", mc."expiresAt", mc.status, mc."sourceType"
+       FROM "MakeupCredit" mc
+      WHERE mc."studentId" = $1 AND mc.status = 'AVAILABLE' AND mc.id <> $2`,
+    picked.studentId, picked.id,
+  );
+  let credit: OwnCredit = picked;
+  let target: MakeupOption | undefined;
+  let firstFailure: string | null = null;
+  for (const id of makeupCreditTryOrder(picked, siblings, bookAt)) {
+    const opts = await getMakeupOptionsForCredit(parentUserId, id);
+    if (!opts.ok) { if (id === picked.id) firstFailure = opts.message; continue; }
+    const hit = opts.options.find((o) => o.classId === input.classId && o.dates.some((d) => d.ymd === input.dateYmd));
+    const sameClass = opts.options.find((o) => o.classId === input.classId);
+    if (hit) { target = hit; credit = id === picked.id ? picked : (siblings.find((c) => c.id === id) ?? picked); break; }
+    if (id === picked.id) { target = sameClass; credit = picked; } // 원래 고른 보강권 — 아래에서 기존 문구로 거절
+  }
+  if (!target && firstFailure) return { ok: false, message: firstFailure };
   if (!target) return { ok: false, message: "이 학생이 갈 수 있는 수업이 아닙니다." };
   // 마감(2026-11-15 마감 1시간 전 통일): 그 반 수업 시작 1시간 전까지 — 오늘 수업도 그 전이면 예약된다
   const clock = kstNow();
@@ -421,7 +436,7 @@ export async function bookMakeup(
       const locked = await tx.$executeRawUnsafe(
         `UPDATE "MakeupCredit" SET status='RESERVED', "updatedAt"=now()
           WHERE id=$1 AND status='AVAILABLE'
-            AND EXISTS (SELECT 1 FROM "Student" s WHERE s.id="MakeupCredit"."studentId" AND ${await childAccessSql("s", "$2")} AND s."mergedIntoStudentId" IS NULL)`, input.creditId, parentUserId,
+            AND EXISTS (SELECT 1 FROM "Student" s WHERE s.id="MakeupCredit"."studentId" AND ${await childAccessSql("s", "$2")} AND s."mergedIntoStudentId" IS NULL)`, credit.id, parentUserId,
       );
       if (Number(locked) === 0) throw new Error("MAKEUP_ALREADY_RESERVED");
       const created = await tx.$queryRawUnsafe<{ id: string }[]>(
@@ -434,10 +449,11 @@ export async function bookMakeup(
     );
       await tx.$executeRawUnsafe(
       `UPDATE "MakeupCredit" SET "makeupSessionId"=$2, "updatedAt"=now() WHERE id=$1`,
-      input.creditId, created[0].id,
+      credit.id, created[0].id,
       );
     });
-    return { ok: true, message: `${target.className} ${kstLabel(input.dateYmd)} 보강이 예약되었습니다.` };
+    // usedAbsenceDate: 실제로 쓴 보강권의 결석일(오래된 보강권부터 — 고른 것과 다를 수 있다)
+    return { ok: true, message: `${target.className} ${kstLabel(input.dateYmd)} 보강이 예약되었습니다.`, usedAbsenceDate: credit.absenceDate };
   } catch (error) {
     // 실패한 거래는 되돌린다. 별도 복구 UPDATE로 회수된 권을 되살리지 않는다.
     if (error instanceof CompensationConflict) return { ok: false, message: error.message };

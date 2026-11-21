@@ -373,6 +373,10 @@ function makeDb(overrides = {}) {
       return c ? [{ id: c.id, status: c.status, makeupSessionId: c.makeupSessionId, bookingPast: false }] : [];
     }
     if (/FROM "Attendance" a/.test(sql)) return [];
+    // 오래된 보강권부터(2026-11-20): 같은 학생의 다른 «사용 가능» 보강권
+    if (/WHERE mc\."studentId" = \$1 AND mc\.status = 'AVAILABLE' AND mc\.id <> \$2/.test(sql)) {
+      return db.credits.filter((x) => x.studentId === args[0] && x.status === "AVAILABLE" && x.id !== args[1]);
+    }
     // ── 보강: 보강권 소유 확인 ──
     if (/WHERE mc\.id = \$1 AND s\."parentId" = \$2 AND mc\.status = 'AVAILABLE' LIMIT 1/.test(sql)) {
       const c = db.credits.find((x) => x.id === args[0]);
@@ -926,7 +930,7 @@ test("예약: 트랜잭션 안에서(잠금 뒤) 그 반·그 날짜 정원을 �
   // 자리가 있으면 정상 예약 — 보강 날짜는 그 날 KST 자정으로 저장된다
   db.raceBooked = {};
   const ok = await makeup.bookMakeup("p1", { creditId: credit.id, classId: "cC", dateYmd: "2026-11-18" });
-  assert.deepEqual(ok, { ok: true, message: "초6중1반 11/18(수) 보강이 예약되었습니다." });
+  assert.deepEqual({ ok: ok.ok, message: ok.message }, { ok: true, message: "초6중1반 11/18(수) 보강이 예약되었습니다." });
   assert.equal(db.seatRechecks, 2);
   assert.equal(current().status, "RESERVED");
   assert.equal(db.sessions[0].makeupDate.toISOString(), "2026-11-17T15:00:00.000Z");
@@ -1082,7 +1086,7 @@ test("김루빈(2021년생·학년 칸 빈 값): 예전엔 «학년 정보 없�
   const adult = await makeup.bookMakeup("p1", { creditId: credit.id, classId: "cAd1", dateYmd: "2026-11-17" });
   assert.equal(adult.ok, false);
   const ok = await makeup.bookMakeup("p1", { creditId: credit.id, classId: "cK2", dateYmd: "2026-11-18" });
-  assert.deepEqual(ok, { ok: true, message: "초저반 11/18(수) 보강이 예약되었습니다." });
+  assert.deepEqual({ ok: ok.ok, message: ok.message }, { ok: true, message: "초저반 11/18(수) 보강이 예약되었습니다." });
 });
 
 test("생년월일이 먼저, 임시 생일(2000-01-01)이면 학년 글자 — 조회 결과가 «초5»와 같다", async () => {

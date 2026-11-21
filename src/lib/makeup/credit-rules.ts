@@ -345,3 +345,34 @@ export function recommendClasses(
       a.dayOfWeek.localeCompare(b.dayOfWeek) ||
       a.startTime.localeCompare(b.startTime));
 }
+
+/**
+ * 보강 예약에 쓸 보강권 순서 — **오래된 결석의 보강권부터** (2026-11-20 원장 지시).
+ *
+ * 왜: 학부모가 목록에서 아무 보강권이나 눌러 예약하면 최근 결석 것을 먼저 써 버리고,
+ *     오래된 것은 기한(결석일 + 2개월)이 지나 사라진다. 같은 학생·같은 종류(정규/방학특강)의 보강권은
+ *     어느 것을 써도 갈 수 있는 수업이 같으니, 결석일이 이른 것부터 쓰게 한다.
+ *
+ * 규칙
+ *   · 고른 보강권보다 결석일이 이르거나 같고, 보강 날짜까지 기한이 남은 «사용 가능» 보강권만 후보
+ *   · 결석일이 이른 순 → 같으면 기한이 이른 순 → 같으면 id 순(항상 같은 결과)
+ *   · 고른 보강권은 언제나 마지막 후보로 남는다(다른 후보가 그 수업·날짜에 안 맞으면 원래대로 쓴다)
+ * 반환 = 시도할 보강권 id 순서.
+ */
+export function makeupCreditTryOrder(
+  selected: { id: string; absenceDate: Date; sourceType: string },
+  candidates: Array<{ id: string; absenceDate: Date; expiresAt: Date; status: string; sourceType: string }>,
+  bookAt: Date,
+): string[] {
+  const selectedAt = new Date(selected.absenceDate).getTime();
+  const older = candidates
+    .filter((c) => c.id !== selected.id
+      && c.status === "AVAILABLE"
+      && c.sourceType === selected.sourceType
+      && new Date(c.absenceDate).getTime() <= selectedAt
+      && new Date(c.expiresAt).getTime() >= bookAt.getTime())
+    .sort((a, b) => (new Date(a.absenceDate).getTime() - new Date(b.absenceDate).getTime())
+      || (new Date(a.expiresAt).getTime() - new Date(b.expiresAt).getTime())
+      || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  return [...older.map((c) => c.id), selected.id];
+}

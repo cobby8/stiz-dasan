@@ -146,6 +146,10 @@ function makeDb({ credits = null, students = null } = {}) {
         });
     }
     // parent-makeup.ts(웹과 같은 함수)의 쿼리
+    // 오래된 보강권부터(2026-11-20): 같은 학생의 다른 «사용 가능» 보강권
+    if (/WHERE mc\."studentId" = \$1 AND mc\.status = 'AVAILABLE' AND mc\.id <> \$2/.test(sql)) {
+      return db.credits.filter((row) => row.studentId === args[0] && row.status === "AVAILABLE" && row.id !== args[1]);
+    }
     if (/WHERE mc\.id = \$1 AND s\."parentId" = \$2 AND mc\.status = 'AVAILABLE' LIMIT 1/.test(sql)) {
       const row = credit(args[0]);
       return owns(row, args[1]) && row.status === "AVAILABLE"

@@ -438,7 +438,8 @@ async function confirmBooking(input: FlowInput, flow: FlowRow, today: string): P
       intakeId: flow.id,
       kindLabel: "보강 예약 완료",
       studentName: state.studentName,
-      sourceText: `${chosen.label} · ${credit.absenceLabel} 결석분 보강권 (카카오 대화로 예약)`,
+      // 실제로 쓴 보강권의 결석일(오래된 보강권부터 쓰면 고른 것과 다를 수 있다 — 2026-11-20)
+      sourceText: `${chosen.label} · ${"usedAbsenceDate" in result && result.usedAbsenceDate ? kstLabel(result.usedAbsenceDate) : credit.absenceLabel} 결석분 보강권 (카카오 대화로 예약)`,
       linkUrl: "/admin/makeup",
     }).catch(() => undefined);
     return reply(
