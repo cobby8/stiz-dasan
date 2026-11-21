@@ -197,6 +197,8 @@ export const STUDENT_REF_TABLES: StudentRefTable[] = [
   { table: "EnrollmentShuttleReview", column: "studentId", mayBeMissing: true },
   // 3년 재원 유니폼 무료 링크 — 유일 제약은 token 뿐, 그대로 옮긴다(대표 학생이 링크를 이어 쓴다).
   { table: "UniformFreeGrant", column: "studentId", mayBeMissing: true },
+  // 유니폼 학원 도착·수령 기록(2026-11-21) — 유일 제약은 (출처, 품목 id) 뿐, 학생 칸은 그대로 옮긴다(현황 화면이 대표 학생을 본다).
+  { table: "UniformArrival", column: "studentId", mayBeMissing: true },
   // 체육관 대관의 «확인된 재원생» — 유일 제약 없음, 그대로 옮긴다(재원생 무료 판정이 대표 학생을 본다).
   { table: "GymRentalRequest", column: "memberStudentId", mayBeMissing: true },
   // 휴원 수강료 처리(이월·환불) 기록. 금액·청구 id 스냅샷이 줄(EnrollmentChangeSettlementLine)에 묶여 있고

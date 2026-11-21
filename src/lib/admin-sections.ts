@@ -73,6 +73,14 @@ export const ADMIN_SECTIONS = {
       { href: "/admin/kakao-policy", label: "카카오 정책 답변" },
     ],
   },
+  // 사이드바 «유니폼»(2026-11-21 원장 «유니폼 신청 현황 페이지») — 신청 현황(도착·수령)이 첫 탭, 옛 «유니폼 주문»(본사 전송)은 둘째 탭
+  uniform: {
+    label: "유니폼",
+    tabs: [
+      { href: "/admin/uniform/status", label: "신청 현황" },
+      { href: "/admin/uniform", label: "본사 전송" },
+    ],
+  },
   // 사이드바 «약관·방침»
   policy: {
     label: "약관·방침",

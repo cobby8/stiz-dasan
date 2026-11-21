@@ -45,7 +45,8 @@ function isShuttlePath(pathname: string): boolean {
 const INBOX_LEGACY_PATHS = ["/admin/requests", "/admin/enrollment-changes", "/admin/withdrawals", "/admin/role-requests", "/admin/kakao-requests", "/admin/rental", "/admin/apply"] as const;
 // 2026-11-13 관리자 메뉴 정리(원장 점검표 승인): 비슷한 화면은 메뉴 하나 + 화면 위 탭 줄로 묶었다.
 //   - section 이 있는 메뉴 = 그 묶음(src/lib/admin-sections.ts)의 어느 화면에 있어도 켜진다
-//   - 메뉴에서만 뺀 화면(주소·화면은 산다): 유니폼 주문(/admin/uniform) · 사진 빠른 업로드(/staff/quick-post → 갤러리 «빠른 업로드» 버튼)
+//   - 메뉴에서만 뺀 화면(주소·화면은 산다): 사진 빠른 업로드(/staff/quick-post → 갤러리 «빠른 업로드» 버튼)
+//   - 유니폼 주문(/admin/uniform)은 2026-11-21 «유니폼» 메뉴의 «본사 전송» 탭으로 다시 보인다
 //   - 수강생 이관(/admin/import)은 원장 지시로 화면·API 를 삭제했다(가져온 자료는 DB 에 그대로)
 // 2026-11-14 아이콘 완전 제거: 메뉴 정의에서 icon 값을 없앴다(어디에서도 그리지 않는다)
 type ExtraNavItem = { href: string; label: string; section?: AdminSectionKey };
@@ -53,6 +54,8 @@ const EXTRA_GROUPS: ReadonlyArray<{ label: string; items: readonly ExtraNavItem[
     { label: "수업", items: [
         { href: "/admin/schedule", label: "수업시간표 관리" },
         { href: "/admin/seasonal", label: "방학특강" },
+        // 2026-11-21 유니폼 신청 현황(학원 도착 → 학부모 문자) + 본사 전송 탭
+        { href: "/admin/uniform/status", label: "유니폼", section: "uniform" },
     ] },
     { label: "홈페이지", items: [
         { href: "/admin/notices", label: "공지사항 관리" },

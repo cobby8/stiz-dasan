@@ -506,6 +506,8 @@ export const SMS_ONLY_PARENT_TRIGGERS: Record<string, string> = {
   RENTAL_APPROVED_APPLICANT: "대관 — 자체 알림톡 틀(RENTAL_APPLICANT_TEMPLATES)",
   RENTAL_CONFIRMED_APPLICANT: "대관 — 자체 알림톡 틀",
   RENTAL_REJECTED_APPLICANT: "대관 — 자체 알림톡 틀",
+  // 2026-11-21 유니폼 학원 도착 — 원장이 관리자 «유니폼 신청 현황»에서 «학원 도착»을 누를 때만 나가는 문자. 등록된 알림톡 틀 없음(후보)
+  UNIFORM_ARRIVED_PARENT: "유니폼 학원 도착 안내(src/lib/uniform/arrivalRules.ts, 원장 버튼으로만 발송). 알림톡 후보",
 };
 
 export function isParentAlimtalkTrigger(trigger: string | null | undefined): trigger is ParentAlimtalkTrigger {

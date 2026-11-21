@@ -263,6 +263,7 @@ model Student {
   regularLocationLinks     RegularShuttleLocationLink[]
   shuttleIntakeReviews     EnrollmentShuttleReview[]
   uniformFreeGrants        UniformFreeGrant[]
+  uniformArrivals          UniformArrival[]
   parent                   User                          @relation(fields: [parentId], references: [id])
 
   @@index([parentId])
@@ -777,6 +778,28 @@ model UniformShopOrderItem {
   order       UniformShopOrder @relation(fields: [shopOrderId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([shopOrderId])
+}
+
+// 유니폼 «학원 도착»·«수령 완료» 기록(2026-11-21). 쇼핑몰 품목 상태는 동기화가 덮어써서 주문 표 대신 여기에 둔다.
+// sourceType SITE = UniformOrderItem.id · SHOP = UniformShopOrderItem.id (두 표를 가리켜 FK 없음). 코드는 raw SQL 로만 쓴다.
+model UniformArrival {
+  id             String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  sourceType     String
+  sourceItemId   String
+  studentId      String?
+  arrivedAt      DateTime  @default(now()) @db.Timestamptz(6)
+  arrivedByName  String?
+  receivedAt     DateTime? @db.Timestamptz(6)
+  receivedByName String?
+  noticeStatus   String? // SENT | FAILED | SKIPPED_NO_STUDENT | SKIPPED_NO_PHONE | DISABLED
+  noticeReason   String?
+  noticeSentAt   DateTime? @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt      DateTime  @default(now()) @db.Timestamptz(6)
+  student        Student?  @relation(fields: [studentId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@unique([sourceType, sourceItemId])
+  @@index([studentId])
 }
 
 // 3년 이상 재원생 유니폼 무료 증정 링크 — 학생별 전용 토큰 1개 = 무료 유니폼 1벌

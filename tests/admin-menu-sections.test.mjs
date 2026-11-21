@@ -13,11 +13,12 @@ const activeHrefs = (html) => [...html.matchAll(/<a [^>]*aria-current="page"[^>]
 
 // 2026-11-13 통계 개편(원장 결정표): «통계»를 설정 묶음에서 빼 «대시보드» 바로 아래로 → 맨 위 7 + 설정 4
 // 2026-11-14 수업 영상: 설정 묶음에 «유튜브 연결» 추가 → 설정 5
-test('사이드바 메뉴 = 맨 위 7 + 수업 2 + 홈페이지 2 + 설정 5 = 16칸(정리 전 33칸 + 홈페이지 보기)', () => {
+// 2026-11-21 유니폼 신청 현황: 수업 묶음에 «유니폼»(신청 현황·본사 전송 탭) 추가 → 수업 3
+test('사이드바 메뉴 = 맨 위 7 + 수업 3 + 홈페이지 2 + 설정 5 = 17칸(정리 전 33칸 + 홈페이지 보기)', () => {
   const nav = sidebar(renderAdminNavigation('/admin'));
   assert.deepEqual(hrefs(nav), [
     '/admin', '/admin/stats', '/admin/inbox', '/admin/students', '/admin/attendance', '/admin/finance', '/admin/shuttle/regular-dispatch',
-    '/admin/schedule', '/admin/seasonal',
+    '/admin/schedule', '/admin/seasonal', '/admin/uniform/status',
     '/admin/notices', '/admin/settings',
     '/admin/staff', '/admin/sms', '/admin/terms', '/admin/pos-plugin', '/admin/youtube',
   ]);
@@ -33,13 +34,15 @@ test('«홈페이지 보기»는 메뉴 묶음이 아니라 맨 아래(로그아
 });
 
 // 탭 연결 표 — 사이드바 메뉴(부모) → 묶인 화면들(탭)
-const PARENT = { attendance: '/admin/attendance', finance: '/admin/finance', homepage: '/admin/settings', messaging: '/admin/sms', policy: '/admin/terms' };
+const PARENT = { attendance: '/admin/attendance', finance: '/admin/finance', homepage: '/admin/settings', messaging: '/admin/sms', uniform: '/admin/uniform/status', policy: '/admin/terms' };
 const EXPECTED_TABS = {
   attendance: ['/admin/attendance', '/admin/absence', '/admin/makeup', '/admin/attendance/feed'],
   // 2026-11-17 «기타 매출» 탭 추가(원장 전용)
   finance: ['/admin/finance', '/admin/payment-requests', '/admin/payment-confirmations', '/admin/pos-reconcile', '/admin/other-revenue'],
   homepage: ['/admin/settings', '/admin/coaches', '/admin/programs', '/admin/gallery', '/admin/media-revocations', '/admin/faq', '/admin/testimonials'],
   messaging: ['/admin/sms', '/admin/notification-deliveries', '/admin/kakao-policy'],
+  // 2026-11-21 «유니폼» — 신청 현황(학원 도착·수령) + 옛 «유니폼 주문»(본사 전송)
+  uniform: ['/admin/uniform/status', '/admin/uniform'],
   policy: ['/admin/terms', '/admin/privacy'],
 };
 

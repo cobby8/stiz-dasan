@@ -186,6 +186,16 @@ const DEFAULT_TEMPLATES: [string, string, string, string, string, string][] = [
         "기사가 학생을 미탑승 처리하면 학부모에게 즉시 안내",
         '["학생명","운행방향"]',
     ],
+    // 2026-11-21 유니폼 학원 도착 — 관리자 «유니폼 신청 현황»에서 원장이 «학원 도착»을 누를 때만 나간다(마이그레이션 20261121120000 과 같은 값)
+    [
+        // 트리거·문구는 src/lib/uniform/arrivalRules.ts(UNIFORM_ARRIVED_TRIGGER·uniformArrivedDefaultBody)와 같다 — 테스트가 맞춰 본다
+        "UNIFORM_ARRIVED_PARENT",
+        "유니폼 학원 도착 (학부모)",
+        "PARENT",
+        `${PARENT_MESSAGE_PREFIX} {{childName}} 학생 유니폼이 학원에 도착했어요. 수업 오실 때 받아 가세요.`,
+        "관리자 «유니폼 신청 현황»에서 «학원 도착»을 누르면 그 학생 보호자에게 발송",
+        '["childName"]',
+    ],
 ];
 
 // 신청 완료 화면과 겹치거나 배정 전 담당자가 불명확한 자동문자는 기본으로 끈다.
