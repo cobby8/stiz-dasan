@@ -10,6 +10,8 @@ import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 import StatusCountChips from "@/components/admin/list/StatusCountChips";
 import { formatKstDate } from "@/lib/datetime/kst";
 import { isFreeUniformOrderMemo } from "@/lib/uniform-free-grant-rules";
+// 수량은 «장»(상의 1 + 하의 1)으로 저장된다 — 화면에서는 «1벌(상·하)·상의만»으로 읽는다(2026-11-21)
+import { uniformOrderQuantityLabel, uniformQuantityLabel } from "@/lib/uniform/arrivalRules";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import { askConfirm } from "@/components/ui/feedback";
 
@@ -342,7 +344,6 @@ export default function UniformOrdersClient({
             <tbody className="divide-y divide-[var(--color-academy-line)]">
               {visibleOrders.map((order) => {
                 const sync = getSyncStatus(order.stizSyncStatus);
-                const totalQuantity = order.items.reduce((sum, item) => sum + (item.quantity || 0), 0);
                 return (
                   <tr
                     key={order.id}
@@ -374,7 +375,7 @@ export default function UniformOrdersClient({
                         ? order.items[0].studentName
                         : <>{order.items[0].studentName} 외 <span className="tabular-nums">{order.items.length - 1}</span>명</>}
                     </td>
-                    <td className="admin-cell-num hidden px-2 py-1.5 text-[var(--color-academy-muted)] md:table-cell">{totalQuantity}벌</td>
+                    <td className="admin-cell-num hidden px-2 py-1.5 text-[var(--color-academy-muted)] md:table-cell">{uniformOrderQuantityLabel(order.items)}</td>
                     <td className="hidden px-2 py-1.5 text-[var(--color-academy-muted)] lg:table-cell">{order.stizOrderNumber || "-"}</td>
                     <td className="admin-cell-num hidden px-2 py-1.5 text-[var(--color-academy-muted)] md:table-cell">{order.sendAttempts}회</td>
                     {/* 관리: 재전송(행 클릭=상세 패널과 겹치지 않게 전파 차단) */}
@@ -437,7 +438,7 @@ export default function UniformOrdersClient({
                 <li key={item.id} className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-3 gap-y-1 p-3">
                   <span className="font-medium text-[var(--color-academy-ink)]">{item.studentName}</span>
                   <span className="text-[var(--color-academy-ink)]">
-                    {item.design || "디자인 미지정"} · <span className="tabular-nums">{item.quantity}</span>벌
+                    {item.design || "디자인 미지정"} · {uniformQuantityLabel(item)}
                   </span>
                   <span className="text-xs text-[var(--color-academy-muted)]">등번호</span>
                   <span className="tabular-nums">{item.backNumber ? `#${item.backNumber}` : "등번호 없음"}</span>

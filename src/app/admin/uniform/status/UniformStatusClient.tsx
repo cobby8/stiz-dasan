@@ -14,6 +14,7 @@ import {
   filterUniformBoard,
   UNIFORM_ARRIVAL_BATCH_LIMIT,
   UNIFORM_NOTICE_LABEL,
+  uniformQuantityLabel,
   type UniformBoardFilter,
   type UniformNoticeStatus,
   type UniformStage,
@@ -260,7 +261,7 @@ export default function UniformStatusClient({ initialItems, loadError }: { initi
                       {item.printName && <span className="block text-xs">인쇄 {item.printName}</span>}
                     </td>
                     <td className="px-2 py-1.5">{sizeText(item)}</td>
-                    <td className="admin-cell-num hidden px-2 py-1.5 md:table-cell">{item.quantity}벌</td>
+                    <td className="admin-cell-num hidden px-2 py-1.5 md:table-cell">{uniformQuantityLabel(item)}</td>
                     <td className="hidden px-2 py-1.5 text-[var(--color-academy-muted)] md:table-cell">
                       {SOURCE_LABEL[item.source]}
                       {item.isFree && <span className="block text-xs text-[var(--color-academy-info)]">무료 증정</span>}

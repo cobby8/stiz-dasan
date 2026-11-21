@@ -450,3 +450,22 @@ test("일괄 전송: 한 건씩 차례로 기존 재전송 액션 · 실패해�
   assert.match(handler, /askConfirm\(bulkRetryConfirmText\(targets\)/);
   assert.doesNotMatch(handler, /Promise\.all/, "동시에 보내지 않는다(본사 부하·시간 제한)");
 });
+
+test("수량 표시: 사이트 신청은 «장» 저장 → 1벌(상·하)·상의만·하의만, 본사몰은 벌 그대로 · 두 화면 모두 사용", () => {
+  const label = rules.uniformQuantityLabel;
+  assert.equal(label({ topSize: "130", bottomSize: "130", quantity: 2 }), "1벌(상·하)");
+  assert.equal(label({ topSize: "140", bottomSize: "", quantity: 1 }), "상의만");
+  assert.equal(label({ topSize: null, bottomSize: "120", quantity: 1 }), "하의만");
+  assert.equal(label({ source: "SITE", topSize: "130", bottomSize: "130", quantity: 2 }), "1벌(상·하)");
+  assert.equal(label({ source: "SHOP", topSize: "130", bottomSize: "130", quantity: 1 }), "1벌");
+  assert.equal(rules.uniformOrderQuantityLabel([{ topSize: "130", bottomSize: "130", quantity: 2 }]), "1벌(상·하)");
+  assert.equal(rules.uniformOrderQuantityLabel([{ topSize: "130", bottomSize: "130", quantity: 2 }, { topSize: "140", bottomSize: "", quantity: 1 }]), "2명분");
+
+  const React = require("react");
+  const { renderToStaticMarkup } = require("react-dom/server");
+  const { default: Client } = loadOrdersClient();
+  const html = renderToStaticMarkup(React.createElement(Client, { initialOrders: [siteOrder("a")], loadError: "" }));
+  assert.match(html, /1벌\(상·하\)/);
+  assert.doesNotMatch(html, />2벌</);
+  assert.match(read("src/app/admin/uniform/status/UniformStatusClient.tsx"), /\{uniformQuantityLabel\(item\)\}/);
+});

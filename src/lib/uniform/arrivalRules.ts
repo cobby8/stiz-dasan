@@ -289,6 +289,30 @@ export function uniformNoticeStatusFromSms(result: { ok: boolean; reason?: strin
   return "FAILED";
 }
 
+/**
+ * 수량 표시(2026-11-21 원장 «왜 두 벌이라고 뜨는 거야?»).
+ * 사이트 신청의 quantity 는 «장» 수다 — 상의 사이즈 있으면 1 + 하의 사이즈 있으면 1(uniform-partner.ts, 본사가 이 규칙으로 받는다).
+ * 그래서 상·하 한 세트가 2 로 저장된다. 저장값은 그대로 두고 화면에서만 «1벌(상·하)·상의만·하의만»으로 읽는다.
+ * 본사몰 품목의 quantity 는 쇼핑몰 주문 수량(벌) 그대로다.
+ */
+export function uniformQuantityLabel(item: { source?: UniformSource; topSize?: string | null; bottomSize?: string | null; quantity: number }): string {
+  const quantity = Number(item.quantity) || 0;
+  if (item.source === "SHOP") return `${quantity}벌`;
+  const hasTop = text(item.topSize).length > 0;
+  const hasBottom = text(item.bottomSize).length > 0;
+  if (hasTop && hasBottom) return quantity === 2 ? "1벌(상·하)" : `${quantity}장(상·하)`;
+  if (hasTop) return quantity === 1 ? "상의만" : `상의 ${quantity}장`;
+  if (hasBottom) return quantity === 1 ? "하의만" : `하의 ${quantity}장`;
+  return `${quantity}장`;
+}
+
+/** 사이트 신청 한 건(학생 여러 명일 수 있다)의 수량 — 한 명이면 그 학생 표시, 여러 명이면 «N명분» */
+export function uniformOrderQuantityLabel(items: Array<{ topSize?: string | null; bottomSize?: string | null; quantity: number }>): string {
+  if (items.length === 0) return "-";
+  if (items.length === 1) return uniformQuantityLabel(items[0]);
+  return `${items.length}명분`;
+}
+
 /** 학생 이름 표시 — 문자 변수에 넣는 이름(끝의 동명이인 구분 글자 A/B 는 뗀다) */
 export function noticeChildName(name: unknown): string {
   const compact = text(name);
